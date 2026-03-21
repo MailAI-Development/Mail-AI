@@ -10,17 +10,15 @@ Mail AI connects to your Outlook inbox, reads incoming shipbroking emails, and u
 
 - **One-click extraction** — pick a date and time, extract all relevant emails from that point forward
 - **Live listening mode** — monitor your inbox in real-time, processing new emails as they arrive with pause/resume control
-- **Smart deduplication** — fuzzy name matching prevents duplicate vessel entries across sessions
 - **Port zone lookup** — every extracted port is automatically mapped to its trade zone using a UNLOCODE reference table
-- **Bilingual interface** — full English and Simplified Chinese UI with live switching
-- **Dark and light mode**
+- **Bilingual interface** — full English and Simplified Chinese UI
 
 ---
 
 ## Requirements
 
 - Windows 10 or later
-- Microsoft Outlook (desktop app, must be installed)
+- Microsoft Outlook Classic (desktop app, must be installed)
 - An OpenAI API key — generate one at [platform.openai.com](https://platform.openai.com)
 
 ---
