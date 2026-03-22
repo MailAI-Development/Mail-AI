@@ -47,12 +47,6 @@ If the option is greyed out, your machine may be managed by an IT administrator 
 
 ---
 
-## OpenAI API costs
-
-Mail AI uses GPT-5.4 Nano, one of the most cost-efficient models available. Typical costs are fractions of a cent per email — a session of 100 emails usually costs less than $0.10. You are billed directly by OpenAI based on your usage.
-
----
-
 ## Licence
 
 MIT — see [LICENSE](LICENSE)
