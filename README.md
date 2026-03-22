@@ -61,3 +61,9 @@ Mail AI uses GPT-5.4 Nano for extraction, one of the most cost-efficient models 
 ## Contact
 
 [hello@mailai.uk](mailto:hello@mailai.uk) · [mailai.uk](https://mailai.uk)
+
+---
+
+## Changelog
+
+v1.0 - Initial release
