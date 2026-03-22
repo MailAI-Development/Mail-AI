@@ -48,6 +48,7 @@ def resource_path(relative_path):
 config_file = resource_path("config.json")
 duplicates_file = resource_path("duplicates.json")
 email_ids_file = resource_path("email_ids.json")
+custom_zones_file = resource_path("custom_zones.json")
 existing_vessels = {}
 email_ids = set()
 
@@ -136,6 +137,17 @@ TRANSLATIONS = {
         "setup_next": "Next",
         "setup_back": "Back",
         "setup_step": "Step",
+        "custom_zones_header": "Custom Zone Mappings",
+        "custom_zones_desc": "Add your own port-to-zone mappings to supplement the built-in WPI database:",
+        "port_name_label": "Port Name:",
+        "zone_label": "Zone:",
+        "add_zone_btn": "Add Mapping",
+        "zone_added": "Zone mapping added.",
+        "zone_removed": "Zone mapping removed.",
+        "zone_empty": "Please enter both a port name and zone.",
+        "remove_zone_btn": "Remove",
+        "no_custom_zones": "No custom zone mappings added yet.",
+        "custom_zones_list": "Current custom mappings:",
     },
     "中文": {
         "welcome": "欢迎使用",
@@ -217,6 +229,17 @@ TRANSLATIONS = {
         "setup_next": "下一步",
         "setup_back": "上一步",
         "setup_step": "步骤",
+        "custom_zones_header": "自定义区域映射",
+        "custom_zones_desc": "添加您自己的港口-区域映射以补充内置的WPI数据库：",
+        "port_name_label": "港口名称：",
+        "zone_label": "区域：",
+        "add_zone_btn": "添加映射",
+        "zone_added": "区域映射已添加。",
+        "zone_removed": "区域映射已删除。",
+        "zone_empty": "请输入港口名称和区域。",
+        "remove_zone_btn": "删除",
+        "no_custom_zones": "尚未添加自定义区域映射。",
+        "custom_zones_list": "当前自定义映射：",
     }
 }
 
@@ -244,6 +267,53 @@ def load_csv_into_dict(csv_file):
                 if value not in mapping[key]:  # avoid duplicates
                     mapping[key].append(value)
     return mapping
+
+def load_custom_zones():
+    if os.path.exists(custom_zones_file):
+        try:
+            with open(custom_zones_file, "r", encoding="utf-8") as f:
+                content = f.read().strip()
+                if not content:
+                    return {}
+                return json.loads(content)
+        except json.JSONDecodeError:
+            return {}
+    return {}
+
+def save_custom_zones(zones):
+    with open(custom_zones_file, "w", encoding="utf-8") as f:
+        json.dump(zones, f, indent=1)
+
+def add_custom_zone(port_name, zone):
+    zones = load_custom_zones()
+    key = port_name.strip().upper()
+    zone = zone.strip().upper()
+    if key not in zones:
+        zones[key] = []
+    if zone not in zones[key]:
+        zones[key].append(zone)
+    save_custom_zones(zones)
+
+def remove_custom_zone(port_name):
+    zones = load_custom_zones()
+    key = port_name.strip().upper()
+    if key in zones:
+        del zones[key]
+        save_custom_zones(zones)
+
+def get_custom_zones_list():
+    zones = load_custom_zones()
+    return [(port, ", ".join(zone_list)) for port, zone_list in sorted(zones.items())]
+
+def merge_custom_zones(csv_mapping):
+    custom = load_custom_zones()
+    for key, zone_list in custom.items():
+        if key not in csv_mapping:
+            csv_mapping[key] = []
+        for zone in zone_list:
+            if zone not in csv_mapping[key]:
+                csv_mapping[key].append(zone)
+    return csv_mapping
 
 def lookup_value(input_text, mapping, fuzzy=True, cutoff=80):
 
