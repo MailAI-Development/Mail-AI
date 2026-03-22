@@ -25,7 +25,7 @@ Mail AI connects to your Outlook inbox, reads incoming shipbroking emails, and u
 
 ## Purchase
 
-Purchase [here](https://mailai.gumroad.com/l/buy).
+Purchase [here](https://mailai.gumroad.com/l/buy) via Gumroad.
 
 ---
 
