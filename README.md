@@ -10,7 +10,7 @@ Mail AI connects to your Outlook inbox, reads incoming shipbroking emails, and u
 
 - **One-click extraction** — pick a date and time, extract all relevant emails from that point forward
 - **Live listening mode** — monitor your inbox in real-time, processing new emails as they arrive with pause/resume control
-- **Port zone lookup** — every extracted port is automatically mapped to its trade zone using a UNLOCODE reference table
+- **Port zone lookup** — every extracted port is automatically mapped to its trade zone using the World Port Index
 - **Bilingual interface** — full English and Simplified Chinese UI
 
 ---
