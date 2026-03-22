@@ -21,7 +21,7 @@ except Exception as e:
     outlook = None
 
 csv_file = resource_path("WPI.csv")
-csv_dict = load_csv_into_dict(csv_file)
+csv_dict = merge_custom_zones(load_csv_into_dict(csv_file))
 
 class ExtractWorker(QObject):
     new_email = Signal(dict)
@@ -536,7 +536,7 @@ class MainWindow(QMainWindow):
 
         self.sidebar_layout.addStretch()
 
-        ver = QLabel("  mailai.uk")
+        ver = QLabel("  mailai.uk         v1.1")
         ver.setFixedHeight(40)
         ver.setStyleSheet("""
             font-family: 'DM Mono';
@@ -763,8 +763,129 @@ class MainWindow(QMainWindow):
         content_layout.addWidget(language_label)
         content_layout.addSpacing(5)
         content_layout.addWidget(self.language_combo)
+        content_layout.addSpacing(40)
+
+        # Custom zone mappings section
+        zones_header = QLabel(t("custom_zones_header", self.language))
+        zones_header.setStyleSheet("font: bold 30px;")
+        content_layout.addWidget(zones_header)
+
+        zones_desc = QLabel(t("custom_zones_desc", self.language))
+        zones_desc.setStyleSheet("font: 16px;")
+        zones_desc.setWordWrap(True)
+        content_layout.addWidget(zones_desc)
+        content_layout.addSpacing(10)
+
+        # Input row for adding new mappings
+        input_row = QHBoxLayout()
+
+        port_label = QLabel(t("port_name_label", self.language))
+        port_label.setStyleSheet("font: 600 16px;")
+        self.port_input = QLineEdit()
+        self.port_input.setPlaceholderText("e.g. BAHIA BLANCA")
+        self.port_input.setFixedSize(300, 40)
+        self.port_input.setStyleSheet("QLineEdit { font-size: 16px; }")
+
+        zone_label_input = QLabel(t("zone_label", self.language))
+        zone_label_input.setStyleSheet("font: 600 16px;")
+        self.zone_input = QLineEdit()
+        self.zone_input.setPlaceholderText("e.g. ECSA")
+        self.zone_input.setFixedSize(200, 40)
+        self.zone_input.setStyleSheet("QLineEdit { font-size: 16px; }")
+
+        self.add_zone_btn = QPushButton(t("add_zone_btn", self.language))
+        self.add_zone_btn.setFixedSize(180, 40)
+        self.add_zone_btn.setStyleSheet("font-weight: 600;")
+        self.add_zone_btn.clicked.connect(self.add_custom_zone_clicked)
+
+        input_row.addWidget(port_label)
+        input_row.addWidget(self.port_input)
+        input_row.addSpacing(10)
+        input_row.addWidget(zone_label_input)
+        input_row.addWidget(self.zone_input)
+        input_row.addSpacing(10)
+        input_row.addWidget(self.add_zone_btn)
+        input_row.addStretch()
+        content_layout.addLayout(input_row)
+
+        self.zone_status_label = QLabel("")
+        self.zone_status_label.setStyleSheet("font: 14px; color: #4CAF50;")
+        content_layout.addWidget(self.zone_status_label)
+        content_layout.addSpacing(15)
+
+        # List of current custom mappings
+        zones_list_label = QLabel(t("custom_zones_list", self.language))
+        zones_list_label.setStyleSheet("font: 600 18px;")
+        content_layout.addWidget(zones_list_label)
+        content_layout.addSpacing(5)
+
+        self.zones_list_container = QVBoxLayout()
+        content_layout.addLayout(self.zones_list_container)
+        self.refresh_zones_list()
 
         return content
+
+    def refresh_zones_list(self):
+        while self.zones_list_container.count():
+            item = self.zones_list_container.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+            elif item.layout():
+                while item.layout().count():
+                    child = item.layout().takeAt(0)
+                    if child.widget():
+                        child.widget().deleteLater()
+
+        custom_zones = get_custom_zones_list()
+        if not custom_zones:
+            empty_label = QLabel(t("no_custom_zones", self.language))
+            empty_label.setStyleSheet("font: 14px; color: gray;")
+            self.zones_list_container.addWidget(empty_label)
+            return
+
+        for port, zones in custom_zones:
+            row = QHBoxLayout()
+            label = QLabel(f"{port}  ->  {zones}")
+            label.setStyleSheet("font: 15px;")
+            label.setMinimumWidth(500)
+
+            remove_btn = QPushButton(t("remove_zone_btn", self.language))
+            remove_btn.setFixedSize(120, 32)
+            remove_btn.setStyleSheet("font-weight: 600;")
+            remove_btn.clicked.connect(lambda checked, p=port: self.remove_custom_zone_clicked(p))
+
+            row.addWidget(label)
+            row.addWidget(remove_btn)
+            row.addStretch()
+
+            row_widget = QWidget()
+            row_widget.setLayout(row)
+            self.zones_list_container.addWidget(row_widget)
+
+    def add_custom_zone_clicked(self):
+        global csv_dict
+        port = self.port_input.text().strip()
+        zone = self.zone_input.text().strip()
+        if not port or not zone:
+            self.zone_status_label.setStyleSheet("font: 14px; color: #f44336;")
+            self.zone_status_label.setText(t("zone_empty", self.language))
+            return
+
+        add_custom_zone(port, zone)
+        csv_dict = merge_custom_zones(load_csv_into_dict(csv_file))
+        self.port_input.clear()
+        self.zone_input.clear()
+        self.zone_status_label.setStyleSheet("font: 14px; color: #4CAF50;")
+        self.zone_status_label.setText(t("zone_added", self.language))
+        self.refresh_zones_list()
+
+    def remove_custom_zone_clicked(self, port_name):
+        global csv_dict
+        remove_custom_zone(port_name)
+        csv_dict = merge_custom_zones(load_csv_into_dict(csv_file))
+        self.zone_status_label.setStyleSheet("font: 14px; color: #4CAF50;")
+        self.zone_status_label.setText(t("zone_removed", self.language))
+        self.refresh_zones_list()
 
     def create_extract_page(self):
         content = QWidget()
