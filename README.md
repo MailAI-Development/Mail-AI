@@ -66,6 +66,5 @@ Mail AI uses GPT-5.4 Nano for extraction, one of the most cost-efficient models 
 
 ## Changelog
 
-v1.0 - Initial release
-
+v1.0 - Initial release 
 v1.1 - Updated to enable custom zone mappings to supplement existing World Port Index mapping
