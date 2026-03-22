@@ -23,9 +23,9 @@ Mail AI connects to your Outlook inbox, reads incoming shipbroking emails, and u
 
 ---
 
-## Download
+## Purchase
 
-Head to the [releases page](https://github.com/MailAI-Development/mailai/releases/latest) to download the latest version.
+Purchase [here](https://mailai.gumroad.com/l/buy).
 
 ---
 
@@ -55,12 +55,6 @@ If the option is greyed out, your machine may be managed by an IT administrator 
 ## OpenAI API costs
 
 Mail AI uses GPT-5.4 Nano for extraction, one of the most cost-efficient models available. Typical costs are fractions of a cent per email — a full session of 50 emails usually costs less than $0.10. You are billed directly by OpenAI based on your usage.
-
----
-
-## Licence
-
-MIT
 
 ---
 
