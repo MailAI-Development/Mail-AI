@@ -62,6 +62,7 @@ MIT — see [LICENSE](LICENSE)
 ## Changelog
 
 v1.0 - Initial release
+
 v1.1 - What's changed:
 - Vessel build year is now extracted alongside MV, deadweight etc.
 - Listening mode fixed
