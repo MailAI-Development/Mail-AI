@@ -3,10 +3,10 @@ import pythoncom
 from PySide6.QtWidgets import (
     QApplication, QWidget, QMainWindow, QVBoxLayout, QHBoxLayout, QSystemTrayIcon, QMenu,
     QPushButton, QLabel, QFrame, QStackedWidget, QLineEdit, QScrollArea, QGridLayout, QComboBox,
-    QFileDialog
+    QFileDialog, QDialog, QMessageBox
 )
-from PySide6.QtGui import QFontDatabase, QFont, QColor, QPalette, QIcon
-from PySide6.QtCore import Qt, QObject, Signal, Slot, QThread, QTimer
+from PySide6.QtGui import QFontDatabase, QFont, QColor, QPalette, QIcon, QDesktopServices
+from PySide6.QtCore import Qt, QObject, Signal, Slot, QThread, QTimer, QUrl
 
 import ctypes
 ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('Mail AI')
@@ -20,7 +20,10 @@ try:
 except Exception as e:
     outlook = None
 
-csv_file = resource_path("WPI.csv")
+csv_file = resource_path("WPIUpdated.csv")
+if not os.path.exists(csv_file):
+    QMessageBox.critical(None, "Missing Resource", f"Required file not found: WPI.csv\nPlease reinstall the application.")
+    sys.exit(1)
 csv_dict = merge_custom_zones(load_csv_into_dict(csv_file))
 
 class ExtractWorker(QObject):
@@ -173,7 +176,7 @@ class SetupWizard(QWidget):
         email_page = QWidget()
         el = QVBoxLayout(email_page)
         el.setAlignment(Qt.AlignCenter)
-        self.email_step = QLabel(f"{t('setup_step', self.language)} 1 / 4")
+        self.email_step = QLabel(f"{t('setup_step', self.language)} 1 / 3")
         self.email_step.setStyleSheet("font: 600 14px; color: #0891b2;")
         self.email_step.setAlignment(Qt.AlignCenter)
         et = QLabel(t("setup_email_title", self.language))
@@ -202,7 +205,7 @@ class SetupWizard(QWidget):
         folder_page = QWidget()
         fl = QVBoxLayout(folder_page)
         fl.setAlignment(Qt.AlignCenter)
-        self.folder_step = QLabel(f"{t('setup_step', self.language)} 2 / 4")
+        self.folder_step = QLabel(f"{t('setup_step', self.language)} 2 / 3")
         self.folder_step.setStyleSheet("font: 600 14px; color: #0891b2;")
         self.folder_step.setAlignment(Qt.AlignCenter)
         ft = QLabel(t("setup_folder_title", self.language))
@@ -231,7 +234,7 @@ class SetupWizard(QWidget):
         excel_page = QWidget()
         xl = QVBoxLayout(excel_page)
         xl.setAlignment(Qt.AlignCenter)
-        self.excel_step = QLabel(f"{t('setup_step', self.language)} 3 / 4")
+        self.excel_step = QLabel(f"{t('setup_step', self.language)} 3 / 3")
         self.excel_step.setStyleSheet("font: 600 14px; color: #0891b2;")
         self.excel_step.setAlignment(Qt.AlignCenter)
         xt = QLabel(t("setup_excel_title", self.language))
@@ -265,48 +268,7 @@ class SetupWizard(QWidget):
         xl.addLayout(excel_row)
         self.pages_list.append(excel_page)
 
-        # --- Page 4: API Key ---
-        api_page = QWidget()
-        al = QVBoxLayout(api_page)
-        al.setAlignment(Qt.AlignCenter)
-        self.api_step = QLabel(f"{t('setup_step', self.language)} 4 / 4")
-        self.api_step.setStyleSheet("font: 600 14px; color: #0891b2;")
-        self.api_step.setAlignment(Qt.AlignCenter)
-        at = QLabel(t("setup_api_title", self.language))
-        at.setStyleSheet("font: bold 40px;")
-        at.setAlignment(Qt.AlignCenter)
-        ad = QLabel(t("setup_api_desc", self.language))
-        ad.setStyleSheet("font: normal 18px;")
-        ad.setAlignment(Qt.AlignCenter)
-        for step_key in ("setup_api_step1", "setup_api_step2", "setup_api_step3", "setup_api_step4"):
-            step_label = QLabel(t(step_key, self.language))
-            step_label.setStyleSheet("font: normal 16px;")
-            step_label.setAlignment(Qt.AlignCenter)
-            al.addWidget(step_label)
-        al.addSpacing(5)
-        aw = QLabel(t("setup_api_warning", self.language))
-        aw.setStyleSheet("font: 600 14px; color: #f59e0b;")
-        aw.setAlignment(Qt.AlignCenter)
-        self.api_input = QLineEdit()
-        self.api_input.setPlaceholderText("sk-proj-...")
-        self.api_input.setFixedSize(500, 45)
-        self.api_input.setEchoMode(QLineEdit.Password)
-        self.api_input.setStyleSheet("QLineEdit { font-size: 16px; }")
-        self.api_input.setText(get_api_key())
-        self.api_input.textChanged.connect(self.update_nav)
-        al.insertWidget(0, self.api_step)
-        al.insertSpacing(1, 10)
-        al.insertWidget(2, at)
-        al.insertSpacing(3, 8)
-        al.insertWidget(4, ad)
-        al.insertSpacing(5, 15)
-        al.addSpacing(10)
-        al.addWidget(aw)
-        al.addSpacing(20)
-        al.addWidget(self.api_input, alignment=Qt.AlignCenter)
-        self.pages_list.append(api_page)
-
-        # --- Page 5: Finish ---
+        # --- Page 4: Finish ---
         finish = QWidget()
         fnl = QVBoxLayout(finish)
         fnl.setAlignment(Qt.AlignCenter)
@@ -388,9 +350,7 @@ class SetupWizard(QWidget):
         elif idx == 2:
             self.next_btn.setEnabled(bool(self.folder_input.text().strip()))
         elif idx == 3:
-            self.next_btn.setEnabled(bool(self.excel_input.text().strip()))
-        elif idx == 4:
-            self.next_btn.setEnabled(bool(self.api_input.text().strip()))
+            self.next_btn.setEnabled(True)
 
         for i, dot in enumerate(self.dots):
             if i == idx:
@@ -406,10 +366,6 @@ class SetupWizard(QWidget):
             save_config(load_config() | {"folder": self.folder_input.text().strip()})
         elif idx == 3:
             save_config(load_config() | {"excel": self.excel_input.text().strip()})
-        elif idx == 4:
-            key = self.api_input.text().strip()
-            if key:
-                set_api_key(key)
 
         if idx < len(self.pages_list) - 1:
             self.stack.setCurrentIndex(idx + 1)
@@ -446,10 +402,9 @@ class MainWindow(QMainWindow):
         self.folder = config.get("folder", "")
         self.excel = config.get("excel", "")
         self.language = config.get("language", "English")
-        self.api_key = get_api_key()
         self.is_first_run = not config.get("setup_complete", False)
 
-        self.col_widths = [220, 200, 120, 160, 80, 150, 120, 140]
+        self.col_widths = [220, 200, 120, 160, 110, 150, 120, 140]
 
         QApplication.setFont(get_font(self.language))
 
@@ -458,6 +413,9 @@ class MainWindow(QMainWindow):
     def setup_ui(self):
         self.extracting_running = False
         self.listening_running = False
+        config = load_config()
+        self.emails_processed = config.get("emails_processed", 0)
+        self._last_donation_milestone = self.emails_processed // 5000
 
         self.main_widget = GridWidget()
         main_layout = QHBoxLayout(self.main_widget)
@@ -530,7 +488,7 @@ class MainWindow(QMainWindow):
             """)
             self.sidebar_layout.addWidget(btn)
 
-        self.extract_sidebar_btn.clicked.connect(lambda: self.switch_page(self.page_home))
+        self.extract_sidebar_btn.clicked.connect(self.on_extract_sidebar_clicked)
         self.filtering_sidebar_btn.clicked.connect(lambda: self.switch_page(self.page_filtering))
         self.settings_sidebar_btn.clicked.connect(lambda: self.switch_page(self.page_settings))
 
@@ -589,7 +547,6 @@ class MainWindow(QMainWindow):
         self.email_address = config.get("email_address", "")
         self.folder = config.get("folder", "")
         self.excel = config.get("excel", "")
-        self.api_key = get_api_key()
 
         old_home = self.page_home
         old_filtering = self.page_filtering
@@ -685,16 +642,6 @@ class MainWindow(QMainWindow):
         input_box3.setText(getattr(self, "excel", ""))
         input_box3.textEdited.connect(self.excel_entered)
 
-        caption_api = QLabel(t("api_key_caption", self.language))
-        caption_api.setStyleSheet("font: 600 20px;")
-        input_api = QLineEdit()
-        input_api.setPlaceholderText("sk-proj-...")
-        input_api.setFixedSize(700, 40)
-        input_api.setEchoMode(QLineEdit.Password)
-        input_api.setText(getattr(self, "api_key", ""))
-        input_api.setStyleSheet("QLineEdit { font-size: 16px; }")
-        input_api.textEdited.connect(self.api_key_entered)
-
         caption4 = QLabel(t("clear_duplicates_caption", self.language))
         caption4.setStyleSheet("font: 600 20px;")
         self.refresh_btn = QPushButton(t("clear_duplicates_btn", self.language))
@@ -713,9 +660,6 @@ class MainWindow(QMainWindow):
         content_layout.addWidget(caption3)
         content_layout.addWidget(input_box3)
         content_layout.addSpacing(25)
-        content_layout.addWidget(caption_api)
-        content_layout.addWidget(input_api)
-        content_layout.addSpacing(25)
         content_layout.addWidget(caption4)
         content_layout.addSpacing(5)
         content_layout.addWidget(self.refresh_btn)
@@ -723,7 +667,14 @@ class MainWindow(QMainWindow):
         return content
 
     def create_settings_page(self):
-        content = QWidget()
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll_area.setFrameShape(QFrame.NoFrame)
+
+        content = GridWidget()
+        content.set_theme(load_config().get("theme", "dark"))
+        self._settings_content = content
         content_layout = QVBoxLayout(content)
         content_layout.setAlignment(Qt.AlignTop | Qt.AlignLeft)
 
@@ -823,7 +774,20 @@ class MainWindow(QMainWindow):
         content_layout.addLayout(self.zones_list_container)
         self.refresh_zones_list()
 
-        return content
+        content_layout.addSpacing(40)
+        donate_label = QLabel(t("donate_optional", self.language))
+        donate_label.setStyleSheet("font: bold 30px;")
+        content_layout.addWidget(donate_label)
+        content_layout.addSpacing(10)
+        donate_btn = QPushButton(t("donation_btn", self.language))
+        donate_btn.setFixedSize(250, 80)
+        donate_btn.setStyleSheet("font-weight: 600;")
+        donate_btn.clicked.connect(self.show_donation_popup)
+        content_layout.addWidget(donate_btn)
+        content_layout.addSpacing(20)
+
+        scroll_area.setWidget(content)
+        return scroll_area
 
     def refresh_zones_list(self):
         while self.zones_list_container.count():
@@ -1031,6 +995,12 @@ class MainWindow(QMainWindow):
         self.stop_btn.clicked.connect(self.handle_stop)
         self.stop_btn.setEnabled(True)
 
+        self.new_extract_btn = QPushButton(t("new_extraction", self.language))
+        self.new_extract_btn.setFixedSize(250, 80)
+        self.new_extract_btn.setStyleSheet("font-weight: 600;")
+        self.new_extract_btn.clicked.connect(self.new_extraction)
+        self.new_extract_btn.hide()
+
         self.caption5 = QLabel("")
         self.caption5.setStyleSheet("font: 600 20px;")
 
@@ -1040,7 +1010,7 @@ class MainWindow(QMainWindow):
         self.scrollf.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
         self.scrollf.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
         self.container = QWidget()
-        self.container.setMinimumWidth(1450)
+        self.container.setMinimumWidth(1510)
         self.row = 1
 
         self.grid = QGridLayout(self.container)
@@ -1054,7 +1024,7 @@ class MainWindow(QMainWindow):
             t("sender", self.language),
             t("subject", self.language),
             t("date", self.language),
-            "MV", "DWT",
+            "MV", "DWT/Built",
             t("location", self.language),
             t("open_date", self.language),
             t("zone", self.language),
@@ -1068,11 +1038,30 @@ class MainWindow(QMainWindow):
 
         self.scrollf.setWidget(self.container)
 
+        self.continue_listen_btn = QPushButton(t("continue_listen", self.language))
+        self.continue_listen_btn.setFixedSize(250, 80)
+        self.continue_listen_btn.setStyleSheet("font-weight: 600;")
+        self.continue_listen_btn.clicked.connect(self.show_listening_page)
+        self.continue_listen_btn.hide()
+
+        self.open_excel_btn = QPushButton(t("open_excel_btn", self.language))
+        self.open_excel_btn.setFixedSize(250, 80)
+        self.open_excel_btn.setStyleSheet("font-weight: 600;")
+        self.open_excel_btn.clicked.connect(self.open_excel_file)
+        self.open_excel_btn.hide()
+
+        btn_row = QHBoxLayout()
+        btn_row.setAlignment(Qt.AlignLeft)
+        btn_row.addWidget(self.stop_btn)
+        btn_row.addWidget(self.new_extract_btn)
+        btn_row.addWidget(self.continue_listen_btn)
+        btn_row.addWidget(self.open_excel_btn)
+
         content_layout.addWidget(self.extheader)
         content_layout.addSpacing(5)
         content_layout.addWidget(self.extbox)
         content_layout.addSpacing(5)
-        content_layout.addWidget(self.stop_btn)
+        content_layout.addLayout(btn_row)
         content_layout.addWidget(self.caption5)
         content_layout.addWidget(self.scrollf)
 
@@ -1112,7 +1101,7 @@ class MainWindow(QMainWindow):
         self.lscrollf.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
 
         self.lcontainer = QWidget()           # separate container
-        self.lcontainer.setMinimumWidth(1450)
+        self.lcontainer.setMinimumWidth(1510)
         self.lrow = 1                         # separate row counter
 
         self.lgrid = QGridLayout(self.lcontainer)  # separate grid
@@ -1124,7 +1113,7 @@ class MainWindow(QMainWindow):
 
         headers = [
             t("sender", self.language), t("subject", self.language),
-            t("date", self.language), "MV", "DWT",
+            t("date", self.language), "MV", "DWT/Built",
             t("location", self.language), t("open_date", self.language),
             t("zone", self.language),
         ]
@@ -1147,6 +1136,20 @@ class MainWindow(QMainWindow):
 
         return content
 
+
+    def on_extract_sidebar_clicked(self):
+        if self.page_main is not None:
+            self.switch_page(self.page_main)
+        else:
+            self.switch_page(self.page_home)
+
+    def new_extraction(self):
+        if self.page_main is not None:
+            self.pages.removeWidget(self.page_main)
+            self.page_main.deleteLater()
+            self.page_main = None
+        self.page_extract = None
+        self.show_extract_page()
 
     def show_extract_page(self):
         if self.extracting_running:
@@ -1185,11 +1188,12 @@ class MainWindow(QMainWindow):
             self.captione2.setText(self.excel)
             self.captione2.setStyleSheet("font: normal 20px;")
         else:
-            self.captione1.setText(t("no_excel", self.language))
+            self.captione1.setText(t("excel_extracting", self.language))
             self.captione1.setStyleSheet("font: 600 20px;")
-            self.captione2.setText("")
+            self.captione2.setText(resolve_excel_path(""))
+            self.captione2.setStyleSheet("font: normal 20px; color: grey;")
 
-        if getattr(self, "email_address", "") and getattr(self, "folder", "") and getattr(self, "excel", "") and getattr(self, "api_key", ""):
+        if getattr(self, "email_address", "") and getattr(self, "folder", ""):
             self.btn.setEnabled(True)
         else:
             self.btn.setEnabled(False)
@@ -1208,6 +1212,8 @@ class MainWindow(QMainWindow):
             self.page_listening = self.create_listening_page()
             self.pages.addWidget(self.page_listening)
         self.switch_page(self.page_listening)
+        if not self.listening_running:
+            self.toggle_listening()
 
 
     def switch_page(self, page):
@@ -1225,16 +1231,14 @@ class MainWindow(QMainWindow):
         self.excel = text
         save_config(load_config() | {"excel": text})
     
-    def api_key_entered(self, text):
-        self.api_key = text
-        set_api_key(text)
-
     def refresh_duplicates(self):
         delete_duplicates()
         self.refresh_btn.setText(t("cleared", self.language))
         QTimer.singleShot(2000, lambda: self.refresh_btn.setText(t("clear_duplicates_btn", self.language)))
 
     def date_entered(self, text, dmy):
+        if not text.isdigit():
+            return
         if dmy == "d":
             self.day = "0" + text if len(text) == 1 else text
         elif dmy == "m":
@@ -1246,6 +1250,8 @@ class MainWindow(QMainWindow):
             self.date = self.year + "-" + self.month + "-" + self.day
 
     def time_entered(self, text, hm):
+        if hm != "ampm" and not text.isdigit():
+            return
         if hm == "h":
             self.hours = "0" + text if len(text) == 1 else text
         elif hm == "m":
@@ -1266,9 +1272,10 @@ class MainWindow(QMainWindow):
             return
 
         self.extracting_running = True
+        self._current_excel = resolve_excel_path(self.excel)
         self.show_main_page()
 
-        generator = night_extraction(dt, self.email_address, self.folder, self.excel, csv_dict)
+        generator = night_extraction(dt, self.email_address, self.folder, self._current_excel, csv_dict)
 
         self.thread = QThread()
         self.worker = ExtractWorker(generator)
@@ -1298,10 +1305,11 @@ class MainWindow(QMainWindow):
             return
 
         self.listening_running = True
+        self._current_excel = resolve_excel_path(self.excel)
 
         self.listen_thread = QThread()
         self.listen_worker = ExtractWorker(None)
-        generator = process_email(self.email_address, self.folder, self.excel, csv_dict, self.listen_worker)
+        generator = process_email(self.email_address, self.folder, self._current_excel, csv_dict, self.listen_worker)
         self.listen_worker.generator = generator
         self.listen_worker.moveToThread(self.listen_thread)
 
@@ -1311,6 +1319,7 @@ class MainWindow(QMainWindow):
         self.listen_worker.done.connect(self.listen_thread.quit)
         self.listen_worker.done.connect(self.listen_worker.deleteLater)
         self.listen_thread.finished.connect(self.listen_thread.deleteLater)
+        self.listen_thread.finished.connect(lambda: setattr(self, 'listen_thread', None))
 
         self.listen_thread.start()
         self.listen_toggle_btn.setEnabled(True)
@@ -1340,7 +1349,9 @@ class MainWindow(QMainWindow):
             vessel_data = email_data["vessel_data"]
 
             mv = vessel_data.get("MV", "")
-            dwt = vessel_data.get("Deadweight", "")
+            dwt = vessel_data.get("Deadweight", "") or ""
+            built = vessel_data.get("Build Year", "") or ""
+            dwt_built = f"{dwt}/{built}" if dwt and built else (dwt or built or "")
             location = vessel_data.get("Vessel Open Location", "")
             date = vessel_data.get("Vessel Open Date", "")
             zone = vessel_data.get("Zone", "")
@@ -1349,7 +1360,7 @@ class MainWindow(QMainWindow):
 
             labels = [
                 QLabel(sender), QLabel(truncate(subject)), QLabel(received_time),
-                QLabel(mv), QLabel(dwt), QLabel(location), QLabel(date), QLabel(zone)
+                QLabel(mv), QLabel(dwt_built), QLabel(location), QLabel(date), QLabel(zone)
             ]
 
             for i, label in enumerate(labels):
@@ -1360,6 +1371,12 @@ class MainWindow(QMainWindow):
 
             self.row += 1
             self.scrollf.verticalScrollBar().setValue(self.scrollf.verticalScrollBar().maximum())
+
+            self.emails_processed += 1
+            if self.emails_processed // 5000 > self._last_donation_milestone:
+                self._last_donation_milestone = self.emails_processed // 5000
+                save_config(load_config() | {"emails_processed": self.emails_processed})
+                self.show_donation_popup()
         
         except Exception as e:
             print(f"Error adding email to table: {e}")
@@ -1386,7 +1403,9 @@ class MainWindow(QMainWindow):
             vessel_data = email_data["vessel_data"]
 
             mv = vessel_data.get("MV", "")
-            dwt = vessel_data.get("Deadweight", "")
+            dwt = vessel_data.get("Deadweight", "") or ""
+            built = vessel_data.get("Build Year", "") or ""
+            dwt_built = f"{dwt}/{built}" if dwt and built else (dwt or built or "")
             location = vessel_data.get("Vessel Open Location", "")
             date = vessel_data.get("Vessel Open Date", "")
             zone = vessel_data.get("Zone", "")
@@ -1395,7 +1414,7 @@ class MainWindow(QMainWindow):
 
             labels = [
                 QLabel(sender), QLabel(truncate(subject)), QLabel(received_time),
-                QLabel(mv), QLabel(dwt), QLabel(location), QLabel(date), QLabel(zone)
+                QLabel(mv), QLabel(dwt_built), QLabel(location), QLabel(date), QLabel(zone)
             ]
 
             for i, label in enumerate(labels):
@@ -1406,6 +1425,12 @@ class MainWindow(QMainWindow):
 
             self.lrow += 1
             self.lscrollf.verticalScrollBar().setValue(self.lscrollf.verticalScrollBar().maximum())
+
+            self.emails_processed += 1
+            if self.emails_processed // 5000 > self._last_donation_milestone:
+                self._last_donation_milestone = self.emails_processed // 5000
+                save_config(load_config() | {"emails_processed": self.emails_processed})
+                self.show_donation_popup()
         
         except Exception as e:
             print(f"Error adding email to table: {e}")
@@ -1428,11 +1453,14 @@ class MainWindow(QMainWindow):
             self.extheader.setText(t("extraction_complete", self.language))
             self.extheader.setStyleSheet("font: bold 25px;")
             self.status.setText(t("extraction_stopped", self.language))
+            self.continue_listen_btn.show()
 
         self.extbox.setStyleSheet("background-color: rgba(255, 0, 0, 100); margin-left: -10px;")
         self.btn.setEnabled(True)
         self.extracting_running = False
-        self.stop_btn.setEnabled(False)
+        self.stop_btn.hide()
+        self.new_extract_btn.show()
+        self.open_excel_btn.show()
 
         self.tray.showMessage(
             "Extraction complete",
@@ -1471,11 +1499,48 @@ class MainWindow(QMainWindow):
         else:
             # resume — wait for old thread to finish before creating a new one
             if hasattr(self, "listen_thread") and self.listen_thread and self.listen_thread.isRunning():
-                self.listen_thread.wait(3000)
+                self.listen_thread.wait(10000)
+                if self.listen_thread and self.listen_thread.isRunning():
+                    return
             self.handle_listen()
             self.listen_toggle_btn.setText(t("pause_listen", self.language))
             self.statusl.setText(t("listening_running", self.language))
             self.lbox.setStyleSheet("background-color: rgba(0, 255, 0, 100); margin-left: -10px;")
+
+    def open_excel_file(self):
+        path = getattr(self, '_current_excel', None) or resolve_excel_path(self.excel)
+        QDesktopServices.openUrl(QUrl.fromLocalFile(path))
+
+    def show_donation_popup(self):
+        dialog = QDialog(self)
+        dialog.setWindowTitle(t("donation_title", self.language))
+        dialog.setFixedWidth(620)
+
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(30, 30, 30, 30)
+        layout.setSpacing(20)
+
+        msg = QLabel(t("donation_message", self.language))
+        msg.setWordWrap(True)
+        msg.setStyleSheet("font: 16px;")
+        layout.addWidget(msg)
+
+        btn_row = QHBoxLayout()
+        donate_btn = QPushButton(t("donation_btn", self.language))
+        donate_btn.setFixedSize(200, 60)
+        donate_btn.setStyleSheet("font-weight: 600;")
+        donate_btn.clicked.connect(lambda: (QDesktopServices.openUrl(QUrl("https://ko-fi.com/jonathanfan")), dialog.accept()))
+
+        close_btn = QPushButton(t("donation_close", self.language))
+        close_btn.setFixedSize(200, 60)
+        close_btn.clicked.connect(dialog.reject)
+
+        btn_row.addWidget(donate_btn)
+        btn_row.addSpacing(20)
+        btn_row.addWidget(close_btn)
+        layout.addLayout(btn_row)
+
+        dialog.exec()
 
     def toggle_theme(self):
         config = load_config()
@@ -1642,6 +1707,8 @@ class MainWindow(QMainWindow):
 
         self.main_widget.set_theme(theme)
         self.pages.set_theme(theme)
+        if hasattr(self, '_settings_content') and self._settings_content:
+            self._settings_content.set_theme(theme)
         QApplication.setFont(get_font(self.language))
 
         if hasattr(self, 'setup_wizard') and self.setup_wizard:
