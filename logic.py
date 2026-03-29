@@ -1,4 +1,4 @@
-from openai import OpenAI, AuthenticationError as OpenAIAuthError, APIError as OpenAIAPIError
+import requests
 import openpyxl
 import os
 import re
@@ -9,19 +9,26 @@ from datetime import datetime
 import pytz
 import time
 import csv
-from rapidfuzz import process, fuzz
 import json
-import keyring
 from math import log10, floor
+import threading
+import logging
 
-_KEYRING_SERVICE = "mailai"
-_KEYRING_USERNAME = "openai_api_key"
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[
+        logging.FileHandler(os.path.join(os.path.expanduser("~"), "mailai.log"), encoding="utf-8"),
+        logging.StreamHandler(),
+    ]
+)
+logger = logging.getLogger(__name__)
 
-def get_api_key():
-    return keyring.get_password(_KEYRING_SERVICE, _KEYRING_USERNAME) or ""
+class ProxyAuthError(Exception):
+    pass
 
-def set_api_key(key):
-    keyring.set_password(_KEYRING_SERVICE, _KEYRING_USERNAME, key)
+class ProxyAPIError(Exception):
+    pass
 
 def format_received_time(dt):
     s = dt.isoformat(timespec='minutes').replace('T', ' ')
@@ -29,28 +36,27 @@ def format_received_time(dt):
         s = s[:-6] + ' ' + s[-6:]
     return s
 
-def get_openai_client():
-    api_key = get_api_key()
-    if not api_key:
-        raise ValueError("No API key configured")
-    return OpenAI(api_key=api_key)
-
 def resource_path(relative_path):
     if getattr(sys, "frozen", False):
-        # Running as PyInstaller exe
         base_path = getattr(sys, "_MEIPASS", os.path.dirname(sys.executable))
     else:
-        # Running as a script
         base_path = os.path.dirname(os.path.abspath(__file__))
-
     return os.path.join(base_path, relative_path)
 
-config_file = resource_path("config.json")
-duplicates_file = resource_path("duplicates.json")
-email_ids_file = resource_path("email_ids.json")
-custom_zones_file = resource_path("custom_zones.json")
+def data_path(relative_path):
+    if getattr(sys, "frozen", False):
+        base_path = os.path.dirname(sys.executable)
+    else:
+        base_path = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(base_path, relative_path)
+
+config_file = data_path("config.json")
+duplicates_file = data_path("duplicates.json")
+email_ids_file = data_path("email_ids.json")
+custom_zones_file = data_path("custom_zones.json")
 existing_vessels = {}
 email_ids = set()
+_email_ids_lock = threading.Lock()
 
 
 
@@ -68,7 +74,6 @@ TRANSLATIONS = {
         "email_caption": "Email address you want to extract data from:",
         "folder_caption": "Folder you want to extract data from:",
         "excel_caption": "Path to Excel spreadsheet (where data will be extracted to):",
-        "api_key_caption": "OpenAI API Key (generate at platform.openai.com → API keys):",
         "clear_duplicates_caption": "Delete all existing duplicates stored",
         "clear_duplicates_btn": "Clear duplicates",
         "cleared": "✓ Duplicates cleared",
@@ -80,7 +85,7 @@ TRANSLATIONS = {
         "date_caption": "Choose a date to extract emails from. If left empty, all emails received today will be extracted:",
         "time_caption": "Choose a time to extract emails from. If left empty, all emails received between midnight and now will be extracted:",
         "start_extracting": "Start extracting",
-        "tooltip": "Enter your email/folder/Excel path/API key in filtering settings first",
+        "tooltip": "Enter your email/folder/Excel path in filtering settings first",
         "no_email": "No email address has been defined, go to filtering settings",
         "email_extracting": "Email address currently extracting from:",
         "no_folder": "No folder has been defined, go to filtering settings",
@@ -89,10 +94,19 @@ TRANSLATIONS = {
         "excel_extracting": "Excel spreadsheet path:",
         "current_extraction": "Current extraction",
         "extraction_running": "Extraction is running",
-        "extraction_stopped": "Extraction has stopped.",
+        "extraction_stopped": "Extraction complete.",
+        "continue_listen": "Continue listening",
+        "donation_title": "Support Mail AI",
+        "donation_message": "Hi! I'm a 16-year-old independent student developer. I built Mail AI entirely on my own and am absorbing the AI API costs out of pocket. If this tool has been helpful to you, a small optional donation would mean the world to me — it helps keep this project alive. Thank you so much!",
+        "donation_btn": "Donate",
+        "donation_close": "Maybe later",
+        "donate_optional": "Optional donation",
+        "open_excel_btn": "Open spreadsheet",
+        "excel_caption": "Path to Excel spreadsheet (leave empty to use default):",
         "extraction_complete_none": "Extraction complete. No results yielded.",
         "extraction_complete": "Extraction complete. Check Excel spreadsheet for results.",
         "stop_extracting": "Stop extracting",
+        "new_extraction": "New extraction",
         "no_vessels": "No vessels found for the given date and time.",
         "vessels_extracted": "Vessels extracted:",
         "sender": "Sender",
@@ -100,6 +114,7 @@ TRANSLATIONS = {
         "date": "Date",
         "location": "Location",
         "open_date": "Open Date",
+        "build_year": "Built",
         "zone": "Zone",
         "listening_header": "Live listening",
         "listening_running": "Listening for emails...",
@@ -112,8 +127,8 @@ TRANSLATIONS = {
         "excel_path_invalid": "Excel path is invalid! (check your format)",
         "folder_not_found": "Folder not found: ",
         "email_not_found": "Email address not found: ",
-        "api_key_invalid": "Invalid API key. Check your key in filtering settings.",
-        "api_error_generic": "OpenAI API error. Check your connection and API key.",
+        "proxy_auth_error": "Service error. Please update the app or contact support.",
+        "proxy_error_generic": "Extraction service error. Check your internet connection.",
         "setup_welcome_title": "Welcome to Mail AI",
         "setup_welcome_subtitle": "Let's get you set up in a few quick steps.",
         "setup_get_started": "Get started",
@@ -122,15 +137,8 @@ TRANSLATIONS = {
         "setup_folder_title": "Outlook folder",
         "setup_folder_desc": "Enter the name of the Outlook folder to monitor for emails.",
         "setup_excel_title": "Excel spreadsheet",
-        "setup_excel_desc": "Choose the Excel file where extracted data will be saved.",
+        "setup_excel_desc": "Choose the Excel file where extracted data will be saved. Leave empty to use a default file in your Documents folder.",
         "setup_excel_browse": "Browse...",
-        "setup_api_title": "OpenAI API Key",
-        "setup_api_desc": "You need an OpenAI API key to use the extraction feature.",
-        "setup_api_step1": "1. Go to platform.openai.com and create an account",
-        "setup_api_step2": "2. Navigate to API Keys in your dashboard",
-        "setup_api_step3": "3. Click 'Create new secret key' and copy it",
-        "setup_api_step4": "4. Paste the key below",
-        "setup_api_warning": "Note: OpenAI API usage is billed to your account. You will need to add credit.",
         "setup_finish_title": "You're all set!",
         "setup_finish_desc": "Your configuration is saved. You can change these settings anytime from the Filtering page.",
         "setup_finish_btn": "Start using Mail AI",
@@ -160,7 +168,6 @@ TRANSLATIONS = {
         "email_caption": "您想提取数据的邮箱地址：",
         "folder_caption": "您想提取数据的文件夹：",
         "excel_caption": "Excel表格路径（数据将被提取到此处）：",
-        "api_key_caption": "OpenAI API 密钥（在 platform.openai.com → API keys 中生成）：",
         "clear_duplicates_caption": "删除所有已存储的重复项",
         "clear_duplicates_btn": "清除重复项",
         "cleared": "✓ 重复项已清除",
@@ -172,7 +179,7 @@ TRANSLATIONS = {
         "date_caption": "选择提取邮件的日期。如果留空，将提取今天收到的所有邮件：",
         "time_caption": "选择提取邮件的时间。如果留空，将提取从午夜到现在收到的所有邮件：",
         "start_extracting": "开始提取",
-        "tooltip": "请先在筛选设置中填写邮箱/文件夹/Excel路径/API密钥",
+        "tooltip": "请先在筛选设置中填写邮箱/文件夹/Excel路径",
         "no_email": "未定义邮箱地址，请前往筛选设置",
         "email_extracting": "当前提取的邮箱地址：",
         "no_folder": "未定义文件夹，请前往筛选设置",
@@ -181,10 +188,19 @@ TRANSLATIONS = {
         "excel_extracting": "Excel表格路径：",
         "current_extraction": "当前提取",
         "extraction_running": "提取进行中",
-        "extraction_stopped": "提取已停止。",
+        "extraction_stopped": "提取完成。",
+        "continue_listen": "继续监听",
+        "donation_title": "支持 Mail AI",
+        "donation_message": "你好！我是一名16岁的独立学生开发者。Mail AI 完全由我独自开发，AI API 的费用由我自己承担。如果这个工具对你有帮助，任何一点小额捐赠对我来说都意义重大——这将帮助我继续维护这个项目。非常感谢！",
+        "donation_btn": "捐赠",
+        "donation_close": "也许以后",
+        "donate_optional": "可选捐赠",
+        "open_excel_btn": "打开表格",
+        "excel_caption": "Excel表格路径（留空则使用默认位置）：",
         "extraction_complete_none": "提取完成，未找到结果。",
         "extraction_complete": "提取完成，请查看Excel表格。",
         "stop_extracting": "停止提取",
+        "new_extraction": "新建提取",
         "no_vessels": "在指定日期和时间内未找到船只。",
         "vessels_extracted": "已提取船只：",
         "sender": "发件人",
@@ -192,6 +208,7 @@ TRANSLATIONS = {
         "date": "日期",
         "location": "位置",
         "open_date": "开放日期",
+        "build_year": "建造年份",
         "zone": "区域",
         "listening_header": "实时监听",
         "listening_running": "正在监听邮件...",
@@ -204,8 +221,8 @@ TRANSLATIONS = {
         "excel_path_invalid": "Excel路径无效！（请检查格式）",
         "folder_not_found": "未找到文件夹：",
         "email_not_found": "未找到邮箱地址：",
-        "api_key_invalid": "API密钥无效，请在筛选设置中检查您的密钥。",
-        "api_error_generic": "OpenAI API错误，请检查您的网络连接和API密钥。",
+        "proxy_auth_error": "服务错误，请更新应用或联系支持。",
+        "proxy_error_generic": "提取服务错误，请检查您的网络连接。",
         "setup_welcome_title": "欢迎使用 Mail AI",
         "setup_welcome_subtitle": "让我们通过几个简单的步骤完成设置。",
         "setup_get_started": "开始设置",
@@ -214,15 +231,8 @@ TRANSLATIONS = {
         "setup_folder_title": "Outlook 文件夹",
         "setup_folder_desc": "输入要监控的 Outlook 文件夹名称。",
         "setup_excel_title": "Excel 表格",
-        "setup_excel_desc": "选择用于保存提取数据的 Excel 文件。",
+        "setup_excel_desc": "选择用于保存提取数据的 Excel 文件。留空将在文档文件夹中使用默认文件。",
         "setup_excel_browse": "浏览...",
-        "setup_api_title": "OpenAI API 密钥",
-        "setup_api_desc": "您需要 OpenAI API 密钥才能使用提取功能。",
-        "setup_api_step1": "1. 前往 platform.openai.com 并创建账户",
-        "setup_api_step2": "2. 在控制面板中找到 API Keys",
-        "setup_api_step3": "3. 点击「创建新密钥」并复制",
-        "setup_api_step4": "4. 将密钥粘贴到下方",
-        "setup_api_warning": "注意：OpenAI API 使用将计入您的账户费用。您需要充值。",
         "setup_finish_title": "设置完成！",
         "setup_finish_desc": "您的配置已保存。您可以随时在筛选页面中更改这些设置。",
         "setup_finish_btn": "开始使用 Mail AI",
@@ -249,7 +259,7 @@ def t(key, language="English"):
 
 keywords = [
     'MV', 'DWT', 'dwt', 'open', 'vessel position', 
-    'bulk carrier', 'handy', 'supramax', 'ultramax', 'panamax', 'kamsarmax'
+    'bulk carrier', 'handy', 'supramax', 'ultramax', 'panamax', 'kamsarmax', 'ETA', 'ETD'
 ]
 
 
@@ -275,8 +285,11 @@ def load_custom_zones():
                 content = f.read().strip()
                 if not content:
                     return {}
-                return json.loads(content)
-        except json.JSONDecodeError:
+                data = json.loads(content)
+                if not isinstance(data, dict):
+                    return {}
+                return data
+        except (json.JSONDecodeError, OSError):
             return {}
     return {}
 
@@ -315,39 +328,21 @@ def merge_custom_zones(csv_mapping):
                 csv_mapping[key].append(zone)
     return csv_mapping
 
-def lookup_value(input_text, mapping, fuzzy=True, cutoff=80):
+def lookup_value(input_text, mapping):
 
     input_text = input_text.strip().upper()
 
     if input_text in mapping:
         return ", ".join(mapping[input_text])
-    
+
     # Substring match
     substring_matches = [
         zone for key, zones in mapping.items() if input_text in key for zone in zones
     ]
     if substring_matches and len(set(substring_matches)) <= 3:
-        zones = list(set(substring_matches))  # remove duplicates if multiple matches
-        zones_str = ", ".join(zones)
-        return zones_str
+        zones = list(set(substring_matches))
+        return ", ".join(zones)
 
-    if fuzzy:
-        matches = process.extract(
-            query=input_text,
-            choices=mapping.keys(),
-            scorer=fuzz.token_sort_ratio,
-            limit=None,
-            score_cutoff=cutoff
-        )
-        if matches and len(matches) <= 3:
-            zones = []
-            for key, _, _ in matches:
-                zones.extend(mapping[key])
-
-            zones = list(dict.fromkeys(zones))
-            zones_str = ", ".join(zones)
-            return zones_str
-        
     return "UNKNOWN"
 
 def is_relevant_email(email_subject, email_body):
@@ -444,35 +439,48 @@ def get_first_n_lines(email_body, max_lines_per_block=8):
     return '\n'.join(result)
 
 def extract_details_from_email(preprocessed_body, csv_dict):
-    try:
-        response = get_openai_client().chat.completions.create(
-            model="gpt-5.4-nano",
-            messages=[
-                {"role": "system", "content":
-                "You are a data extraction tool. Output ONLY the requested fields in the exact format shown."
-                "No explanations, no notes, no extra text. If a value is unknown, write None."
-                },
-                {"role": "user", "content":
-                f"Extract the following details for each vessel mentioned in the shipbroking email:\n\n"
-                f"1. MV (Motor Vessel): vessel name, sometimes prefixed with MV but may be numbered with no MV, never include DWT — e.g. MV OCEAN STAR\n"
-                f"2. Deadweight (DWT): DWT in K to 2 significant figures — e.g. 70K, 58K. None if unknown\n"
-                f"3. Vessel Open Location: only return a specific named port, poxrt name only in capitals, strip country and prefixes like OPEN/AT/IN — e.g. HEREKE, SINGAPORE. None if unknown\n"
-                f"4. Vessel Open Date: date only, no year — e.g. 10 OCT, 20-22 NOV, EARLY OCT. Can be straight after Open Location. None if unknown\n"
-                f"Format:\nMV: [MV name]\nDeadweight: [deadweight]\nVessel Open Location: [vessel open location]\nVessel Open Date: [vessel open date]\n"
-                f"Repeat for each vessel mentioned in the email.\n"
-                f"A vessel's details may span multiple lines.\n"
-                f"Return None for any field that is missing, unclear, or implausible.\n\n"
-                f"Before moving on to the next vessel, separate each vessel with '---'.\n"
-                f"Email:\n{preprocessed_body}\n\n"},
-            ]
-        )
-    except OpenAIAuthError:
-        raise
-    except OpenAIAPIError:
-        raise
+    payload = {
+        "messages": [
+            {"role": "system", "content":
+            "You are a data extraction tool. Output ONLY the requested fields in the exact format shown."
+            "No explanations, no notes, no extra text. If a value is unknown, write None."
+            },
+            {"role": "user", "content":
+            f"Extract the following details for each vessel mentioned in the shipbroking email:\n\n"
+            f"1. MV (Motor Vessel): vessel name, sometimes prefixed with MV but may be numbered with no MV, never include DWT — e.g. MV OCEAN STAR\n"
+            f"2. Deadweight (DWT): DWT in K to 2 significant figures — e.g. 70K, 58K. None if unknown\n"
+            f"3. Build Year: 4-digit year the vessel was built — often written alongside DWT as DWT/YEAR e.g. 57K/2012. None if unknown\n"
+            f"4. Vessel Open Location: only return a specific named port, port name only in capitals, strip country and prefixes like OPEN/AT/IN — e.g. HEREKE, SINGAPORE. None if unknown\n"
+            f"5. Vessel Open Date: date only, no year — e.g. 10 OCT, 20-22 NOV, EARLY OCT. Can be straight after Open Location. None if unknown\n"
+            f"Format:\nMV: [MV name]\nDeadweight: [deadweight]\nBuild Year: [build year]\nVessel Open Location: [vessel open location]\nVessel Open Date: [vessel open date]\n"
+            f"Repeat for each vessel mentioned in the email.\n"
+            f"A vessel's details may span multiple lines.\n"
+            f"Return None for any field that is missing, unclear, or implausible.\n\n"
+            f"Before moving on to the next vessel, separate each vessel with '---'.\n"
+            f"Email:\n{preprocessed_body}\n\n"},
+        ]
+    }
+    headers = {"X-App-Token": _APP_TOKEN}
+    last_error = None
+    for attempt in range(3):
+        try:
+            resp = requests.post(PROXY_URL, json=payload, headers=headers, timeout=60)
+            if resp.status_code == 401:
+                raise ProxyAuthError("Unauthorized")
+            resp.raise_for_status()
+            data = resp.json()
+            break
+        except ProxyAuthError:
+            raise
+        except requests.exceptions.RequestException as e:
+            last_error = e
+            logger.warning(f"API request failed (attempt {attempt + 1}/3): {e}")
+            if attempt < 2:
+                time.sleep(2 ** attempt)
+    else:
+        raise ProxyAPIError(str(last_error))
 
-    details = response.choices[0].message.content.strip()
-    print(details)
+    details = data["content"].strip()
 
     vessels = details.split('---')
     extracted_vessels = []
@@ -480,6 +488,7 @@ def extract_details_from_email(preprocessed_body, csv_dict):
     for vessel in vessels:
         mv = re.search(r'MV:\s*(.*)|MV\s*(.*)', vessel)
         deadweight = re.search(r'Deadweight:\s*(.*)', vessel)
+        build_year = re.search(r'Build Year:\s*(.*)', vessel)
         location = re.search(r'Vessel Open Location:\s*(.*)', vessel)
         date_of_arrival = re.search(r'Vessel Open Date:\s*(.*)', vessel)
 
@@ -489,9 +498,19 @@ def extract_details_from_email(preprocessed_body, csv_dict):
             stripped = value.strip()
             return None if stripped.lower() == 'none' else stripped.upper()
 
+        def clean_year(value):
+            if value is None:
+                return None
+            stripped = value.strip()
+            if stripped.lower() == 'none':
+                return None
+            match = re.match(r'(\d{4})', stripped)
+            return match.group(1) if match else None
+
         vessel_data = {
             'MV': ensure_mv_prefix(clean(mv.group(1) if mv and mv.group(1) else (mv.group(2) if mv and mv.group(2) else None))),
             'Deadweight': normalize_dwt(clean(deadweight.group(1) if deadweight else None)),
+            'Build Year': clean_year(build_year.group(1) if build_year else None),
             'Vessel Open Location': clean(location.group(1) if location else None),
             'Vessel Open Date': validate_date(clean(date_of_arrival.group(1) if date_of_arrival else None)),
         }
@@ -507,21 +526,24 @@ def extract_details_from_email(preprocessed_body, csv_dict):
 
 
 
+def resolve_excel_path(path):
+    if not path or not path.strip():
+        docs = os.path.join(os.path.expanduser("~"), "Documents")
+        os.makedirs(docs, exist_ok=True)
+        return os.path.join(docs, "Vessel_Data_Extraction.xlsx")
+    path = os.path.normpath(path)
+    if not path.lower().endswith(".xlsx"):
+        path += ".xlsx"
+    return path
+
 def load_config():
     if os.path.exists(config_file):
         with open(config_file, "r", encoding="utf-8") as f:
             config = json.load(f)
-        # Migrate legacy plaintext API key to keyring
-        if "api_key" in config and config["api_key"]:
-            set_api_key(config["api_key"])
-            del config["api_key"]
-            save_config(config)
         return config
     return {}
 
 def save_config(config):
-    # Never persist the API key in config.json
-    config = {k: v for k, v in config.items() if k != "api_key"}
     with open(config_file, "w", encoding="utf-8") as f:
         json.dump(config, f, indent=1)
 
@@ -529,7 +551,7 @@ def get_config_value(key, prompt_text, change):
     config = load_config()
 
     if key in config and config[key] and change == False:
-        print(f"Found saved {key}: {config[key]}")
+        logger.debug(f"Found saved {key}: {config[key]}")
         return config[key]
 
     value = input(prompt_text + ": ")
@@ -540,23 +562,25 @@ def get_config_value(key, prompt_text, change):
 
 def load_email_ids():
     global email_ids
-    if os.path.exists(email_ids_file):
-        try:
-            with open(email_ids_file, "r", encoding="utf-8") as f:
-                content = f.read().strip()
-                if not content:
-                    return
-                email_ids = set(json.loads(content))
-        except (json.JSONDecodeError, Exception):
-            email_ids = set()
+    with _email_ids_lock:
+        if os.path.exists(email_ids_file):
+            try:
+                with open(email_ids_file, "r", encoding="utf-8") as f:
+                    content = f.read().strip()
+                    if not content:
+                        return
+                    email_ids = set(json.loads(content))
+            except (json.JSONDecodeError, OSError):
+                email_ids = set()
 
 
 def save_email_ids():
-    ids_list = list(email_ids)
-    if len(ids_list) > 5000:
-        ids_list = ids_list[-5000:]
-        email_ids.clear()
-        email_ids.update(ids_list)
+    with _email_ids_lock:
+        ids_list = list(email_ids)
+        if len(ids_list) > 5000:
+            ids_list = ids_list[-5000:]
+            email_ids.clear()
+            email_ids.update(ids_list)
     with open(email_ids_file, "w", encoding="utf-8") as f:
         json.dump(ids_list, f)
 
@@ -579,7 +603,7 @@ def validate(date, time_str, email_address, folder, excel_path, outlook, languag
     except ValueError:
         return False, t("datetime_invalid", language), None
 
-    if not excel_path.endswith(".xlsx"):
+    if excel_path and not excel_path.endswith(".xlsx"):
         return False, t("excel_path_invalid", language), None
 
     for account in outlook.Folders:
@@ -605,36 +629,47 @@ def is_excel_open(file_path):
 
 
 def append_data_excel(file_path, data, specific_datetime, listening):
-    headers = ['Sender', 'Subject', 'Received Time', 'MV', 'Deadweight', 'Vessel Open Location', 'Vessel Open Date', 'Zone']
+    headers = ['Sender', 'Subject', 'Received Time', 'MV', 'DWT/Built', 'Vessel Open Location', 'Vessel Open Date', 'Zone']
+
+    today = datetime.now().date()
+    sheet_name = today.strftime("%d %b %Y")
 
     if not os.path.exists(file_path):
         workbook = openpyxl.Workbook()
         sheet = workbook.active
-        sheet.title = "Vessel Data"
-        workbook.save(file_path)
-
-    workbook = openpyxl.load_workbook(file_path)
-    sheet = workbook.active
-    timestamp = specific_datetime
-    
-    if listening:
-        if specific_datetime:
-            sheet.append([f"Emails extracted from {timestamp} below:"])
-
+        sheet.title = sheet_name
         sheet.append(headers)
-        
+        sheet.auto_filter.ref = "A1:H1"
+        workbook.save(file_path)
+        workbook = openpyxl.load_workbook(file_path)
+        sheet = workbook[sheet_name]
+    else:
+        workbook = openpyxl.load_workbook(file_path)
+        if sheet_name in workbook.sheetnames:
+            sheet = workbook[sheet_name]
+        else:
+            sheet = workbook.create_sheet(title=sheet_name)
+            sheet.append(headers)
+            sheet.auto_filter.ref = "A1:H1"
+
+    if listening and specific_datetime:
+        sheet.append([f"Emails extracted from {specific_datetime} below:"])
+        sheet.append(headers)
         sheet.auto_filter.ref = f"A{sheet.max_row}:H{sheet.max_row}"
 
     for entry in data:
         subject = entry.get('Subject', '') or ''
         if len(subject) > 50:
             subject = subject[:50] + '...'
+        dwt = entry.get('Deadweight', '') or ''
+        year = entry.get('Build Year', '') or ''
+        dwt_built = f"{dwt}/{year}" if dwt and year else (dwt or year or '')
         row = [
             entry.get('Sender', ''),
             subject,
             entry.get('Received Time', ''),
             entry.get('MV', ''),
-            entry.get('Deadweight', ''),
+            dwt_built,
             entry.get('Vessel Open Location', ''),
             entry.get('Vessel Open Date', ''),
             entry.get('Zone', '')
@@ -801,6 +836,7 @@ def delete_duplicates():
 def process_email(email_address,folder,excel_path,csv_dict,worker):
 
     global email_ids
+    start_time = datetime.now()
     pythoncom.CoInitialize()
     try:
         outlook = win32com.client.Dispatch("Outlook.Application").GetNamespace("MAPI")
@@ -829,24 +865,30 @@ def process_email(email_address,folder,excel_path,csv_dict,worker):
                 if not worker.running:
                     return
 
-                if message.EntryID not in email_ids and hasattr(message, 'ReceivedTime'):
+                with _email_ids_lock:
+                    already_seen = message.EntryID in email_ids
+                if not already_seen and hasattr(message, 'ReceivedTime'):
+                    received_time = message.ReceivedTime
+                    if received_time.replace(tzinfo=None) < start_time:
+                        message = messages.GetNext()
+                        continue
+
                     email_body = message.Body
                     email_subject = message.Subject
                     sender_email = message.SenderEmailAddress
-                    received_time = message.ReceivedTime
 
                     if is_relevant_email(email_subject, email_body):
-                        print(f"Processing email from: {sender_email} with subject: {email_subject}")
+                        logger.info(f"Processing email from: {sender_email} with subject: {email_subject}")
                         preprocessed_body = get_first_n_lines(email_body)
 
                         if preprocessed_body:
                             try:
                                 extracted_details = extract_details_from_email(preprocessed_body, csv_dict)
-                            except OpenAIAuthError:
-                                yield {"type": "api_error", "error_key": "api_key_invalid"}
+                            except ProxyAuthError:
+                                yield {"type": "api_error", "error_key": "proxy_auth_error"}
                                 return
-                            except OpenAIAPIError:
-                                yield {"type": "api_error", "error_key": "api_error_generic"}
+                            except ProxyAPIError:
+                                yield {"type": "api_error", "error_key": "proxy_error_generic"}
                                 return
                             valid_vessels = filter_data(extracted_details)
                             vessels = detect_duplicates(valid_vessels)
@@ -876,7 +918,8 @@ def process_email(email_address,folder,excel_path,csv_dict,worker):
                         else:
                             append_error_message(excel_path, sender_email, email_subject)
 
-                    email_ids.add(message.EntryID)
+                    with _email_ids_lock:
+                        email_ids.add(message.EntryID)
                     save_email_ids()
 
                 message = messages.GetNext()
@@ -920,22 +963,24 @@ def night_extraction(specific_datetime,email_address,folder,excel_path,csv_dict)
             if hasattr(message, 'ReceivedTime'):
                 received_time = message.ReceivedTime
 
-                if received_time > specific_datetime:
+                if received_time.replace(tzinfo=None) <= specific_datetime.replace(tzinfo=None):
+                    break
+                if received_time.replace(tzinfo=None) > specific_datetime.replace(tzinfo=None):
                     email_body = message.Body
                     email_subject = message.Subject
                     sender_email = message.SenderEmailAddress
 
                     if is_relevant_email(email_subject, email_body):
-                        print(f"Processing email from: {sender_email} with subject: {email_subject}")
+                        logger.info(f"Processing email from: {sender_email} with subject: {email_subject}")
                         preprocessed_body = get_first_n_lines(email_body)
                         if preprocessed_body:
                             try:
                                 extracted_details = extract_details_from_email(preprocessed_body, csv_dict)
-                            except OpenAIAuthError:
-                                yield {"type": "api_error", "error_key": "api_key_invalid"}
+                            except ProxyAuthError:
+                                yield {"type": "api_error", "error_key": "proxy_auth_error"}
                                 return
-                            except OpenAIAPIError:
-                                yield {"type": "api_error", "error_key": "api_error_generic"}
+                            except ProxyAPIError:
+                                yield {"type": "api_error", "error_key": "proxy_error_generic"}
                                 return
                             valid_vessels = filter_data(extracted_details)
                             vessels = detect_duplicates(valid_vessels)
