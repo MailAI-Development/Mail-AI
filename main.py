@@ -494,7 +494,7 @@ class MainWindow(QMainWindow):
 
         self.sidebar_layout.addStretch()
 
-        ver = QLabel("  mailai.uk         v1.1")
+        ver = QLabel("  mailai.uk         v1.2")
         ver.setFixedHeight(40)
         ver.setStyleSheet("""
             font-family: 'DM Mono';
@@ -1012,6 +1012,7 @@ class MainWindow(QMainWindow):
         self.container = QWidget()
         self.container.setMinimumWidth(1510)
         self.row = 1
+        self.table_data = []  # list of {'zone': str, 'labels': [str, ...]}
 
         self.grid = QGridLayout(self.container)
         self.grid.setContentsMargins(10, 10, 10, 10)
@@ -1358,6 +1359,11 @@ class MainWindow(QMainWindow):
 
             self.caption5.setText(f"{t('vessels_extracted', self.language)} {ves}")
 
+            self.table_data.append({
+                'zone': zone or "",
+                'labels': [sender, truncate(subject), received_time, mv, dwt_built, location, date, zone or ""]
+            })
+
             labels = [
                 QLabel(sender), QLabel(truncate(subject)), QLabel(received_time),
                 QLabel(mv), QLabel(dwt_built), QLabel(location), QLabel(date), QLabel(zone)
@@ -1453,6 +1459,24 @@ class MainWindow(QMainWindow):
             self.extheader.setText(t("extraction_complete", self.language))
             self.extheader.setStyleSheet("font: bold 25px;")
             self.status.setText(t("extraction_stopped", self.language))
+
+            # Sort table by Zone alphabetically
+            self.table_data.sort(key=lambda r: ('ZZZ' if r.get('zone', '').upper() in ('', 'UNKNOWN') else r.get('zone', '').upper()))
+            for r in range(self.row - 1, 0, -1):
+                for c in range(len(self.col_widths)):
+                    item = self.grid.itemAtPosition(r, c)
+                    if item and item.widget():
+                        w = item.widget()
+                        self.grid.removeWidget(w)
+                        w.deleteLater()
+            for r_idx, row_data in enumerate(self.table_data, start=1):
+                for c_idx, text in enumerate(row_data['labels']):
+                    lbl = QLabel(text)
+                    lbl.setStyleSheet("font-size: 18px; padding-right: 15px;")
+                    lbl.setWordWrap(True)
+                    lbl.setFixedWidth(self.col_widths[c_idx])
+                    self.grid.addWidget(lbl, r_idx, c_idx)
+
             self.continue_listen_btn.show()
 
         self.extbox.setStyleSheet("background-color: rgba(255, 0, 0, 100); margin-left: -10px;")
@@ -1498,10 +1522,22 @@ class MainWindow(QMainWindow):
             self.lbox.setStyleSheet("background-color: rgba(255, 165, 0, 100); margin-left: -10px;")
         else:
             # resume — wait for old thread to finish before creating a new one
-            if hasattr(self, "listen_thread") and self.listen_thread and self.listen_thread.isRunning():
+            try:
+                thread_running = (
+                    hasattr(self, "listen_thread")
+                    and self.listen_thread
+                    and self.listen_thread.isRunning()
+                )
+            except RuntimeError:
+                self.listen_thread = None
+                thread_running = False
+            if thread_running:
                 self.listen_thread.wait(10000)
-                if self.listen_thread and self.listen_thread.isRunning():
-                    return
+                try:
+                    if self.listen_thread and self.listen_thread.isRunning():
+                        return
+                except RuntimeError:
+                    self.listen_thread = None
             self.handle_listen()
             self.listen_toggle_btn.setText(t("pause_listen", self.language))
             self.statusl.setText(t("listening_running", self.language))
