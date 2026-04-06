@@ -24,6 +24,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
 class ProxyAuthError(Exception):
     pass
 
@@ -337,7 +338,7 @@ def lookup_value(input_text, mapping):
 
     # Substring match
     substring_matches = [
-        zone for key, zones in mapping.items() if input_text in key for zone in zones
+        zone for key, zones in mapping.items() if input_text in key or key in input_text for zone in zones
     ]
     if substring_matches and len(set(substring_matches)) <= 3:
         zones = list(set(substring_matches))
@@ -356,82 +357,157 @@ def is_relevant_email(email_subject, email_body):
             return True
     return False
 
-def get_first_n_lines(email_body, max_lines_per_block=8):
-    lines = email_body.splitlines()
-
-    # Pass 1: Remove noise lines (signatures, disclaimers, quoted replies, etc.)
+def get_first_n_lines(email_body):
     noise_patterns = re.compile(
         r'(?i)^('
+        # quoted replies
         r'(>\s*)'
+        # legal / email footer boilerplate
         r'|.*confidential.*'
         r'|.*disclaimer.*'
         r'|.*unsubscribe.*'
         r'|.*this (e-?mail|message) (is |was )?(intended|sent|confidential).*'
+        r'|.*best regards.*|.*kind regards.*|.*warm regards.*'
+        r'|.*sincerely.*|.*yours faithfully.*'
+        r'|\s*sent from .*'
+        r'|\s*get outlook for .*'
+        # separator lines
         r'|-{3,}.*forwarded.*-{3,}'
         r'|-{5,}$'
         r'|_{5,}$'
         r'|={5,}$'
-        r'|\s*sent from .*'
-        r'|\s*get outlook for .*'
-        r'|.*best regards.*|.*kind regards.*|.*warm regards.*'
-        r'|.*sincerely.*|.*yours faithfully.*'
+        r'|\*{5,}$'
+        # bunker specs
+        r'|.*\bLSFO\b.*\bISO\b.*'
+        r'|.*\bMGO\b.*\bISO\b.*'
+        r'|.*\bLSMGO\b.*\bISO\b.*'
+        r'|.*bimco.*'
+        r'|.*marpol.*'
+        r'|.*sulphur content.*'
+        r'|.*bunker.*quality.*'
+        r'|.*bunker.*spec.*'
+        r'|.*mixing of bunkers.*'
+        r'|.*charterers.*warrant.*'
+        r'|.*iso\s*8217.*'
+        # speed / consumption tables
+        r'|.*\bspeed\b.*\bcons\b.*'
+        r'|.*abt\s+\d+.*knot.*'
+        r'|.*\bbeaufort\b.*'
+        r'|.*douglas sea.*'
+        r'|.*good weather condition.*'
+        r'|.*extrapolation.*'
+        r'|.*positive current.*'
+        r'|.*clean bottom.*'
+        r'|.*adverse current.*'
+        r'|.*wave.*swell.*'
+        r'|.*ballast.*deballast.*'
+        r'|.*lsmgo for exchanging.*'
+        r'|.*liberty of using.*'
+        r'|.*maneuvering.*'
+        r'|.*maintenance works.*'
+        # vessel particulars / tech specs
+        r'|.*\bimo no\b.*'
+        r'|.*\bcall sign\b.*'
+        r'|.*port of registry.*'
+        r'|.*\bflag\b.*\bclass\b.*'
+        r'|.*\bbuilder\b.*'
+        r'|.*date of delivery.*'
+        r'|.*\bloa\b.*\blbp\b.*'
+        r'|.*\bloa\b.*\bbeam\b.*'
+        r'|.*\bgross tonnage\b.*'
+        r'|.*\bgrt\b.*\bnrt\b.*'
+        r'|.*\bgt\b.*\bnt\b.*\d+.*'
+        r'|.*panama tonnage.*'
+        r'|.*main engine.*'
+        r'|.*auxiliary engine.*'
+        r'|.*hatch cover.*'
+        r'|.*tank top strength.*'
+        r'|.*\bco2 devices\b.*'
+        r'|.*radio remote control.*'
+        r'|.*\bport idle\b.*'
+        r'|.*\bport working\b.*'
+        # last cargo / port history
+        r'|.*last (five|ten|five|3|5|10)\s*(cargo|port).*'
+        r'|.*last \d+\s*(cargo|port).*'
+        r'|.*bunker on delivery.*'
+        r'|.*buker on delivery.*'
+        r'|all (above|details).*'
+        # loadline / draft tables (never in summaries)
+        r'|.*\bSSW\b.*'
+        r'|.*\b(WINTER|SUMMER|TROPICAL)\b.*\bDWT\b.*'
+        r'|.*\bDWT\b.*\bTPC\b.*'
+        r'|.*\bTPC\b.*\bDRAFT\b.*'
+        r'|.*\bDRAFT\b.*\bTPC\b.*'
+        # fuel consumption lines
+        r'|.*\bVLSFO\b.*\bLSMGO\b.*'
+        r'|.*\bLSFO\b.*\bLSMGO\b.*'
+        r'|.*\bMDO\b.*\bLSFO\b.*'
+        # speed lines using K (knots abbrev) alongside a fuel type — e.g. "ABT 13K ON LSFO ABT 25MT"
+        r'|.*\b\d+\s*k\b.*\b(lsfo|vlsfo|lsmgo|mgo)\b.*'
+        # vessel registry / class
+        r'|.*\bimo\b.*\b\d{7}\b.*'
+        r'|.*\bimo number\b.*'
+        r'|.*\bclass\b.*\b(BV|DNV|LR|ABS|NK|GL|CCS|RINA|KR)\b.*'
+        r'|.*\bbuilt\b.*\bflag\b.*'
+        # hold / capacity lines
+        r'|.*\bgrain\b.*\bbale\b.*\bcbm\b.*'
+        r'|.*\ball details about\b.*'
         r')'
     )
 
-    cleaned = []
-    for line in lines:
-        stripped = line.strip()
-        if not stripped:
-            cleaned.append('')
-            continue
-        if noise_patterns.match(stripped):
-            continue
-        cleaned.append(stripped)
-
-    # Pass 2: Detect vessel block headers
-    block_header = re.compile(
-        r'(?i)('
-        r'^\d{1,2}[.)]\s'
-        r'|^\s*M[./]?V[./]?\s'
-        r')'
-    )
-
-    # Pass 3: Extract first N lines of each block
-    core_pattern = re.compile(
+    relevant = re.compile(
         r'(?i)('
         r'\bM[./]?V[./]?\b|\bDWT\b|\b\d+\s*K\b|\bOPEN\b'
+        r'|\bO\s*/\s*A\b|\bO\.A\.?\b|\bOA\b'
         r'|\b(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\b'
-        r'|\b(HANDY|SUPRA|ULTRA|PANAMAX|KAMSARMAX|CAPESIZE)\b'
-        r'|\bBUILT\b|\bBLT\b|\bSPOT\b|\bPPT\b'
+        r'|\b(JANUARY|FEBRUARY|MARCH|APRIL|MAY|JUNE|JULY|AUGUST|SEPTEMBER|OCTOBER|NOVEMBER|DECEMBER)\b'
+        r'|\d{1,2}[.)]\s'
         r')'
     )
 
-    result = []
-    in_block = False
-    lines_in_current_block = 0
-
-    for line in cleaned:
-        is_header = block_header.match(line)
-        if is_header:
-            in_block = True
-            lines_in_current_block = 0
-
-        if in_block:
-            if not is_header and line == '':
-                lines_in_current_block += 1
-                if lines_in_current_block <= max_lines_per_block:
-                    result.append(line)
-                continue
-            if lines_in_current_block < max_lines_per_block:
-                result.append(line)
-            lines_in_current_block += 1
+    # Clean lines, tracking original indices
+    cleaned = []
+    for line in email_body.splitlines():
+        stripped = line.strip()
+        if not stripped or noise_patterns.match(stripped):
+            cleaned.append(None)
         else:
-            if core_pattern.search(line):
-                result.append(line)
+            cleaned.append(stripped)
 
-    # Fallback: no blocks detected, return first 50 cleaned non-empty lines
-    if not result:
-        result = [l for l in cleaned if l.strip()][:50]
+    # Mark relevant line indices, then expand by 1 context line each side
+    relevant_indices = set()
+    for i, line in enumerate(cleaned):
+        if line and relevant.search(line):
+            relevant_indices.add(i)
+
+    context_indices = set()
+    for i in relevant_indices:
+        for j in (i - 1, i, i + 1):
+            if 0 <= j < len(cleaned) and cleaned[j]:
+                context_indices.add(j)
+
+    result = [cleaned[i] for i in sorted(context_indices)]
+
+    mv_name_re = re.compile(
+        r'\bM\.?V\.?\b\s*["\']?\s*([A-Z][A-Z\s\d\-]{2,40}?)(?=["\']?\s*(?:\(|\bDWT\b|\bOPEN\b|\b\d{5}\b|,|$))',
+        re.IGNORECASE
+    )
+    has_summary_context = re.compile(
+        r'(?i)(\bOPEN\b|\bO\s*/\s*A\b|\bARD\b'
+        r'|\b(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\b'
+        r'|\b(JANUARY|FEBRUARY|MARCH|APRIL|MAY|JUNE|JULY|AUGUST|SEPTEMBER|OCTOBER|NOVEMBER|DECEMBER)\b)'
+    )
+    seen_vessels = set()
+    deduped = []
+    for line in result:
+        m = mv_name_re.search(line)
+        if m:
+            name_key = ' '.join(m.group(1).strip().upper().split())
+            if name_key in seen_vessels and not has_summary_context.search(line):
+                continue  # repeated vessel name with no new open/date info
+            seen_vessels.add(name_key)
+        deduped.append(line)
+    result = deduped
 
     if not result:
         return None
@@ -449,13 +525,13 @@ def extract_details_from_email(preprocessed_body, csv_dict):
             f"Extract the following details for each vessel mentioned in the shipbroking email:\n\n"
             f"1. MV (Motor Vessel): vessel name, sometimes prefixed with MV but may be numbered with no MV, never include DWT — e.g. MV OCEAN STAR\n"
             f"2. Deadweight (DWT): DWT in K to 2 significant figures — e.g. 70K, 58K. None if unknown\n"
-            f"3. Build Year: 4-digit year the vessel was built — often written alongside DWT as DWT/YEAR e.g. 57K/2012. None if unknown\n"
-            f"4. Vessel Open Location: only return a specific named port, port name only in capitals, strip country and prefixes like OPEN/AT/IN — e.g. HEREKE, SINGAPORE. None if unknown\n"
-            f"5. Vessel Open Date: date only, no year — e.g. 10 OCT, 20-22 NOV, EARLY OCT. Can be straight after Open Location. None if unknown\n"
+            f"3. Build Year: 4-digit year the vessel was built — often written alongside DWT as DWT/YEAR e.g. 57K/2012 but may be elsewhere. None if unknown\n"
+            f"4. Vessel Open Location: the port or region where the vessel becomes available. Port name only in capitals, strip country and prefixes like OPEN/AT/IN/EX. May be marked with O/A or phrased as 'Open <location>', 'EX SHIPYARD <location>', or 'delivery <location>'. If only a region code is given (e.g. CJK, ECI, WCI, NOPAC), return that. None if unknown\n"
+            f"5. Vessel Open Date: the date the vessel becomes available. Date only, no year — e.g. 10 OCT, 20-22 NOV, EARLY OCT. May be phrased as open date, O/A, ARD, ETA, 'Expected time of delivery', or 'delivery date'. None if unknown\n"
             f"Format:\nMV: [MV name]\nDeadweight: [deadweight]\nBuild Year: [build year]\nVessel Open Location: [vessel open location]\nVessel Open Date: [vessel open date]\n"
             f"Repeat for each vessel mentioned in the email.\n"
             f"A vessel's details may span multiple lines.\n"
-            f"Return None for any field that is missing, unclear, or implausible.\n\n"
+            f"Return None for any field that is missing.\n"
             f"Before moving on to the next vessel, separate each vessel with '---'.\n"
             f"Email:\n{preprocessed_body}\n\n"},
         ]
@@ -748,6 +824,8 @@ def normalise_date(date):
     for full, short in replacements.items():
         date = re.sub(rf'\b{full}\b', short, date, flags=re.IGNORECASE)
     date = re.sub(r'(\d+)(ST|ND|RD|TH)\b', r'\1', date, flags=re.IGNORECASE)
+    date = re.sub(r'(\d+)\s+TO\s+(\d+)', r'\1-\2', date, flags=re.IGNORECASE)
+    date = re.sub(r'\b(19|20)\d{2}\b', '', date)
     return date.strip().upper()
 
 def ensure_mv_prefix(name):
@@ -779,17 +857,18 @@ def validate_date(date_str):
     date_str = normalise_date(date_str)
     months = r'(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)'
     valid_patterns = [
-        rf'^\d{{1,2}}\s+{months}$',                              # 10 OCT
-        rf'^\d{{1,2}}-\d{{1,2}}\s+{months}$',                   # 20-22 NOV
-        rf'^\d{{1,2}}/\d{{1,2}}\s+{months}$',                   # 10/11 OCT
-        rf'^\d{{1,2}}\s+{months}\s*-\s*\d{{1,2}}\s+{months}$',  # 30 JUN - 2 JUL
-        rf'^{months}\s+\d{{1,2}}$',                              # OCT 10
-        rf'^(?:EARLY|MID|LATE|END)\s+{months}$',                 # EARLY OCT
+        rf'^\d{{1,2}}\s+{months}$',                                                      # 10 OCT
+        rf'^\d{{1,2}}-\d{{1,2}}\s+{months}$',                                            # 20-22 NOV
+        rf'^\d{{1,2}}/\d{{1,2}}\s+{months}$',                                            # 10/11 OCT
+        rf'^\d{{1,2}}\s+{months}\s*[-/]\s*\d{{1,2}}\s+{months}$',                       # 30 JUN - 2 JUL / 30 JUN / 2 JUL
+        rf'^{months}\s+\d{{1,2}}$',                                                      # OCT 10
+        rf'^(?:EARLY|MID|LATE|END)\s+{months}$',                                         # EARLY OCT
+        rf'^(?:EARLY|MID|LATE|END)\s+{months}\s*/\s*(?:EARLY|MID|LATE|END)\s+{months}$', # LATE MAR / EARLY APR
     ]
     for pattern in valid_patterns:
         if re.match(pattern, date_str):
             return date_str
-    return None
+    return date_str
 
 def is_valid_vessel(vessel):
     return (
