@@ -25,6 +25,10 @@ if not os.path.exists(csv_file):
     QMessageBox.critical(None, "Missing Resource", f"Required file not found: WPI.csv\nPlease reinstall the application.")
     sys.exit(1)
 csv_dict = merge_custom_zones(load_csv_into_dict(csv_file))
+_unlocode = load_unlocode_dict()
+for _k, _v in _unlocode.items():
+    if _k not in csv_dict:
+        csv_dict[_k] = _v
 
 class ExtractWorker(QObject):
     new_email = Signal(dict)
@@ -35,6 +39,7 @@ class ExtractWorker(QObject):
         self.generator = generator
         self.running = True
         self.api_error_key = None
+        self.limit_reached = False
 
     def run(self):
         for email in self.generator:
@@ -42,6 +47,9 @@ class ExtractWorker(QObject):
                 break
             if email.get("type") == "api_error":
                 self.api_error_key = email["error_key"]
+                break
+            if email.get("type") == "limit_reached":
+                self.limit_reached = True
                 break
             self.new_email.emit(email)
         self.done.emit()
@@ -415,7 +423,6 @@ class MainWindow(QMainWindow):
         self.listening_running = False
         config = load_config()
         self.emails_processed = config.get("emails_processed", 0)
-        self._last_donation_milestone = self.emails_processed // 5000
 
         self.main_widget = GridWidget()
         main_layout = QHBoxLayout(self.main_widget)
@@ -775,15 +782,59 @@ class MainWindow(QMainWindow):
         self.refresh_zones_list()
 
         content_layout.addSpacing(40)
-        donate_label = QLabel(t("donate_optional", self.language))
-        donate_label.setStyleSheet("font: bold 30px;")
-        content_layout.addWidget(donate_label)
+
+        license_header = QLabel(t("pro_section_header", self.language))
+        license_header.setStyleSheet("font: bold 30px;")
+        content_layout.addWidget(license_header)
         content_layout.addSpacing(10)
-        donate_btn = QPushButton(t("donation_btn", self.language))
-        donate_btn.setFixedSize(250, 80)
-        donate_btn.setStyleSheet("font-weight: 600;")
-        donate_btn.clicked.connect(self.show_donation_popup)
-        content_layout.addWidget(donate_btn)
+
+        cfg = load_config()
+        if cfg.get("is_pro", False):
+            status_text = t("pro_active", self.language)
+            status_color = "#22d3ee"
+        else:
+            monthly = cfg.get("monthly_count", 0)
+            status_text = f"{t('no_license', self.language)}  ({monthly}/200 this month)"
+            status_color = "#7ca4c0"
+
+        self.license_status_label = QLabel(status_text)
+        self.license_status_label.setStyleSheet(f"font: 16px; color: {status_color};")
+        content_layout.addWidget(self.license_status_label)
+        content_layout.addSpacing(10)
+
+        key_row = QHBoxLayout()
+        license_label_w = QLabel(t("license_label", self.language))
+        license_label_w.setStyleSheet("font: 600 16px;")
+
+        self.license_input = QLineEdit()
+        self.license_input.setPlaceholderText("MAILAI-YYYYMM-XXXXXXXXXX")
+        self.license_input.setFixedSize(340, 40)
+        self.license_input.setStyleSheet("QLineEdit { font-size: 15px; }")
+        self.license_input.setText(cfg.get("license_key", ""))
+
+        self.activate_btn = QPushButton(t("activate_btn", self.language))
+        self.activate_btn.setFixedSize(140, 40)
+        self.activate_btn.setStyleSheet("font-weight: 600;")
+        self.activate_btn.clicked.connect(self.activate_license)
+
+        key_row.addWidget(license_label_w)
+        key_row.addSpacing(8)
+        key_row.addWidget(self.license_input)
+        key_row.addSpacing(8)
+        key_row.addWidget(self.activate_btn)
+        key_row.addStretch()
+        content_layout.addLayout(key_row)
+
+        self.key_feedback_label = QLabel("")
+        self.key_feedback_label.setStyleSheet("font: 14px;")
+        content_layout.addWidget(self.key_feedback_label)
+        content_layout.addSpacing(12)
+
+        upgrade_btn = QPushButton(t("upgrade_btn", self.language))
+        upgrade_btn.setFixedSize(340, 50)
+        upgrade_btn.setStyleSheet("font-weight: 600;")
+        upgrade_btn.clicked.connect(lambda: QDesktopServices.openUrl(QUrl("https://ko-fi.com/mailaiuk/tiers")))
+        content_layout.addWidget(upgrade_btn)
         content_layout.addSpacing(20)
 
         scroll_area.setWidget(content)
@@ -1272,6 +1323,11 @@ class MainWindow(QMainWindow):
             self.btn.setEnabled(True)
             return
 
+        if not is_pro_active() and load_config().get("monthly_count", 0) >= MONTHLY_LIMIT:
+            self.show_upgrade_dialog()
+            self.btn.setEnabled(True)
+            return
+
         self.extracting_running = True
         self._current_excel = resolve_excel_path(self.excel)
         self.show_main_page()
@@ -1379,11 +1435,7 @@ class MainWindow(QMainWindow):
             self.scrollf.verticalScrollBar().setValue(self.scrollf.verticalScrollBar().maximum())
 
             self.emails_processed += 1
-            if self.emails_processed // 5000 > self._last_donation_milestone:
-                self._last_donation_milestone = self.emails_processed // 5000
-                save_config(load_config() | {"emails_processed": self.emails_processed})
-                self.show_donation_popup()
-        
+
         except Exception as e:
             print(f"Error adding email to table: {e}")
 
@@ -1433,18 +1485,20 @@ class MainWindow(QMainWindow):
             self.lscrollf.verticalScrollBar().setValue(self.lscrollf.verticalScrollBar().maximum())
 
             self.emails_processed += 1
-            if self.emails_processed // 5000 > self._last_donation_milestone:
-                self._last_donation_milestone = self.emails_processed // 5000
-                save_config(load_config() | {"emails_processed": self.emails_processed})
-                self.show_donation_popup()
-        
+
         except Exception as e:
             print(f"Error adding email to table: {e}")
 
     def on_extraction_done(self):
         error_key = getattr(self.worker, "api_error_key", None)
+        limit_hit = getattr(self.worker, "limit_reached", False)
 
-        if error_key:
+        if limit_hit:
+            self.show_upgrade_dialog()
+            self.extheader.setText(t("limit_reached_title", self.language))
+            self.extheader.setStyleSheet("font: bold 25px; color: #22d3ee;")
+            self.status.setText(t("extraction_stopped", self.language))
+        elif error_key:
             self.extheader.setText(t(error_key, self.language))
             self.extheader.setStyleSheet("font: bold 25px; color: red;")
             self.status.setText(t("extraction_stopped", self.language))
@@ -1460,8 +1514,16 @@ class MainWindow(QMainWindow):
             self.extheader.setStyleSheet("font: bold 25px;")
             self.status.setText(t("extraction_stopped", self.language))
 
-            # Sort table by Zone alphabetically
-            self.table_data.sort(key=lambda r: ('ZZZ' if r.get('zone', '').upper() in ('', 'UNKNOWN') else r.get('zone', '').upper()))
+            # Sort table by Zone alphabetically, then by DWT smallest to largest within each zone
+            def _dwt_sort_val(row):
+                dwt_str = row.get('labels', [])[4] if len(row.get('labels', [])) > 4 else ''
+                m = re.match(r'(\d+)', dwt_str or '')
+                return int(m.group(1)) if m else float('inf')
+
+            self.table_data.sort(key=lambda r: (
+                'ZZZ' if r.get('zone', '').upper() in ('', 'UNKNOWN') else r.get('zone', '').upper(),
+                _dwt_sort_val(r)
+            ))
             for r in range(self.row - 1, 0, -1):
                 for c in range(len(self.col_widths)):
                     item = self.grid.itemAtPosition(r, c)
@@ -1502,7 +1564,16 @@ class MainWindow(QMainWindow):
 
     def on_listen_done(self):
         error_key = getattr(self.listen_worker, "api_error_key", None)
-        if error_key:
+        limit_hit = getattr(self.listen_worker, "limit_reached", False)
+        if limit_hit:
+            self.show_upgrade_dialog()
+            self.lheader.setText(t("limit_reached_title", self.language))
+            self.lheader.setStyleSheet("font: bold 50px; color: #22d3ee;")
+            self.statusl.setText(t("extraction_stopped", self.language))
+            self.lbox.setStyleSheet("background-color: rgba(34, 211, 238, 50); margin-left: -10px;")
+            self.listening_running = False
+            self.listen_toggle_btn.setText(t("resume_listen", self.language))
+        elif error_key:
             self.lheader.setText(t(error_key, self.language))
             self.lheader.setStyleSheet("font: bold 50px; color: red;")
             self.statusl.setText(t(error_key, self.language))
@@ -1538,6 +1609,9 @@ class MainWindow(QMainWindow):
                         return
                 except RuntimeError:
                     self.listen_thread = None
+            if not is_pro_active() and load_config().get("monthly_count", 0) >= MONTHLY_LIMIT:
+                self.show_upgrade_dialog()
+                return
             self.handle_listen()
             self.listen_toggle_btn.setText(t("pause_listen", self.language))
             self.statusl.setText(t("listening_running", self.language))
@@ -1547,36 +1621,51 @@ class MainWindow(QMainWindow):
         path = getattr(self, '_current_excel', None) or resolve_excel_path(self.excel)
         QDesktopServices.openUrl(QUrl.fromLocalFile(path))
 
-    def show_donation_popup(self):
+    def show_upgrade_dialog(self):
         dialog = QDialog(self)
-        dialog.setWindowTitle(t("donation_title", self.language))
+        dialog.setWindowTitle(t("limit_reached_title", self.language))
         dialog.setFixedWidth(620)
 
         layout = QVBoxLayout(dialog)
         layout.setContentsMargins(30, 30, 30, 30)
         layout.setSpacing(20)
 
-        msg = QLabel(t("donation_message", self.language))
+        msg = QLabel(t("limit_reached_body", self.language))
         msg.setWordWrap(True)
         msg.setStyleSheet("font: 16px;")
         layout.addWidget(msg)
 
         btn_row = QHBoxLayout()
-        donate_btn = QPushButton(t("donation_btn", self.language))
-        donate_btn.setFixedSize(200, 60)
-        donate_btn.setStyleSheet("font-weight: 600;")
-        donate_btn.clicked.connect(lambda: (QDesktopServices.openUrl(QUrl("https://ko-fi.com/jonathanfan")), dialog.accept()))
+        upgrade_btn = QPushButton(t("upgrade_btn", self.language))
+        upgrade_btn.setFixedSize(280, 60)
+        upgrade_btn.setStyleSheet("font-weight: 600;")
+        upgrade_btn.clicked.connect(lambda: (QDesktopServices.openUrl(QUrl("https://ko-fi.com/mailai/membership")), dialog.accept()))
 
         close_btn = QPushButton(t("donation_close", self.language))
-        close_btn.setFixedSize(200, 60)
+        close_btn.setFixedSize(150, 60)
         close_btn.clicked.connect(dialog.reject)
 
-        btn_row.addWidget(donate_btn)
+        btn_row.addWidget(upgrade_btn)
         btn_row.addSpacing(20)
         btn_row.addWidget(close_btn)
         layout.addLayout(btn_row)
 
         dialog.exec()
+
+    def activate_license(self):
+        key = self.license_input.text().strip()
+        if validate_license_key(key):
+            config = load_config()
+            config["license_key"] = key
+            config["is_pro"] = True
+            save_config(config)
+            self.key_feedback_label.setText(t("pro_active", self.language))
+            self.key_feedback_label.setStyleSheet("font: 14px; color: #22d3ee;")
+            self.license_status_label.setText(t("pro_active", self.language))
+            self.license_status_label.setStyleSheet("font: 16px; color: #22d3ee;")
+        else:
+            self.key_feedback_label.setText(t("invalid_key", self.language))
+            self.key_feedback_label.setStyleSheet("font: 14px; color: red;")
 
     def toggle_theme(self):
         config = load_config()
@@ -1795,6 +1884,7 @@ if __name__ == "__main__":
     load_existing_vessels()
     load_email_ids()
     config = load_config()
+    check_and_reset_monthly_count()
     app = QApplication(sys.argv)
     app.setWindowIcon(QIcon(resource_path("icon.png")))
     window = MainWindow()
