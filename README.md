@@ -75,6 +75,6 @@ v1.2 - What's new:
 - Greatly improved **email filtering**
 
 v1.3 - What's new:
-- Freemium model introduced - Mail AI is now free for up to 200 email extractions per month. Extraction pauses automatically when the limit is reached and resets on the 1st of each month.
-- Pro tier - Unlimited extractions for £9/month via Ko-fi. Enter your monthly license key in Settings to activate.
-- Privacy page - mailai.uk/privacy documents exactly what the app accesses, what gets sent to OpenAI, and what stays on your machine.
+- **Freemium model introduced** - Mail AI is now free for up to **200 email extractions per month**
+- Pro tier - **Unlimited extractions** for **£9/month** via Ko-fi (enter your monthly license key in Settings to activate)
+- Privacy page at mailai.uk/privacy, which documents exactly what the app accesses, what gets sent to OpenAI, and what stays on your machine
