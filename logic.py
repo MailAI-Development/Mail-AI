@@ -10,6 +10,7 @@ import pytz
 import time
 import csv
 import json
+import difflib
 from math import log10, floor
 import threading
 import logging
@@ -24,11 +25,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+API_KEY = "REPLACE_BEFORE_BUILD"
 
-class ProxyAuthError(Exception):
-    pass
+MONTHLY_LIMIT = 200
+_LICENSE_SECRET = "REPLACE_BEFORE_BUILD"
 
-class ProxyAPIError(Exception):
+class APIError(Exception):
     pass
 
 def format_received_time(dt):
@@ -97,11 +99,7 @@ TRANSLATIONS = {
         "extraction_running": "Extraction is running",
         "extraction_stopped": "Extraction complete.",
         "continue_listen": "Continue listening",
-        "donation_title": "Support Mail AI",
-        "donation_message": "Hi! I'm a 16-year-old independent student developer. I built Mail AI entirely on my own and am absorbing the AI API costs out of pocket. If this tool has been helpful to you, a small optional donation would mean the world to me — it helps keep this project alive. Thank you so much!",
-        "donation_btn": "Donate",
         "donation_close": "Maybe later",
-        "donate_optional": "Optional donation",
         "open_excel_btn": "Open spreadsheet",
         "excel_caption": "Path to Excel spreadsheet (leave empty to use default):",
         "extraction_complete_none": "Extraction complete. No results yielded.",
@@ -157,6 +155,15 @@ TRANSLATIONS = {
         "remove_zone_btn": "Remove",
         "no_custom_zones": "No custom zone mappings added yet.",
         "custom_zones_list": "Current custom mappings:",
+        "limit_reached_title": "Monthly limit reached",
+        "limit_reached_body": "You've reached your 200 email extraction limit for this month. Upgrade to Pro for unlimited extractions.",
+        "upgrade_btn": "Upgrade to Pro — £9/month",
+        "license_label": "License Key",
+        "activate_btn": "Activate",
+        "pro_active": "Pro active",
+        "no_license": "Free tier — 200 emails/month",
+        "invalid_key": "Invalid or expired key",
+        "pro_section_header": "Pro License",
     },
     "中文": {
         "welcome": "欢迎使用",
@@ -191,11 +198,7 @@ TRANSLATIONS = {
         "extraction_running": "提取进行中",
         "extraction_stopped": "提取完成。",
         "continue_listen": "继续监听",
-        "donation_title": "支持 Mail AI",
-        "donation_message": "你好！我是一名16岁的独立学生开发者。Mail AI 完全由我独自开发，AI API 的费用由我自己承担。如果这个工具对你有帮助，任何一点小额捐赠对我来说都意义重大——这将帮助我继续维护这个项目。非常感谢！",
-        "donation_btn": "捐赠",
         "donation_close": "也许以后",
-        "donate_optional": "可选捐赠",
         "open_excel_btn": "打开表格",
         "excel_caption": "Excel表格路径（留空则使用默认位置）：",
         "extraction_complete_none": "提取完成，未找到结果。",
@@ -251,6 +254,15 @@ TRANSLATIONS = {
         "remove_zone_btn": "删除",
         "no_custom_zones": "尚未添加自定义区域映射。",
         "custom_zones_list": "当前自定义映射：",
+        "limit_reached_title": "每月额度已用完",
+        "limit_reached_body": "您本月的200封邮件提取额度已用完。升级到专业版可无限提取。",
+        "upgrade_btn": "升级到专业版 — £9/月",
+        "license_label": "许可证密钥",
+        "activate_btn": "激活",
+        "pro_active": "专业版已激活",
+        "no_license": "免费版 — 每月200封",
+        "invalid_key": "无效或已过期的密钥",
+        "pro_section_header": "专业版许可证",
     }
 }
 
@@ -263,6 +275,91 @@ keywords = [
     'bulk carrier', 'handy', 'supramax', 'ultramax', 'panamax', 'kamsarmax', 'ETA', 'ETD'
 ]
 
+
+_COUNTRY_ZONE = {
+    'AU': 'AUS', 'NZ': 'AUS',
+    'FI': 'BALTIC', 'SE': 'BALTIC', 'DK': 'BALTIC', 'PL': 'BALTIC',
+    'EE': 'BALTIC', 'LV': 'BALTIC', 'LT': 'BALTIC',
+    'UA': 'BSEA', 'RO': 'BSEA', 'BG': 'BSEA', 'GE': 'BSEA',
+    'KZ': 'CIS', 'AZ': 'CIS', 'TM': 'CIS',
+    'NL': 'CONTI', 'BE': 'CONTI', 'GB': 'CONTI', 'IE': 'CONTI',
+    'NO': 'CONTI', 'IS': 'CONTI', 'PT': 'CONTI', 'DE': 'CONTI',
+    'KE': 'EAFC', 'TZ': 'EAFC', 'MZ': 'EAFC', 'MG': 'EAFC',
+    'ET': 'EAFC', 'SO': 'EAFC', 'KM': 'EAFC', 'SC': 'EAFC', 'MU': 'EAFC',
+    'BR': 'ECSA', 'AR': 'ECSA', 'UY': 'ECSA',
+    'CN': 'FE', 'JP': 'FE', 'KR': 'FE', 'TW': 'FE', 'KP': 'FE',
+    'HK': 'FE', 'MO': 'FE',
+    'IT': 'MED', 'GR': 'MED', 'HR': 'MED', 'SI': 'MED', 'ME': 'MED',
+    'AL': 'MED', 'MT': 'MED', 'CY': 'MED', 'LB': 'MED', 'IL': 'MED',
+    'LY': 'MED', 'TN': 'MED', 'DZ': 'MED', 'MA': 'MED', 'ES': 'MED',
+    'TR': 'MED', 'EG': 'MED',
+    'CO': 'NCSA', 'VE': 'NCSA', 'GY': 'NCSA', 'SR': 'NCSA',
+    'AE': 'PG', 'KW': 'PG', 'IQ': 'PG', 'IR': 'PG', 'QA': 'PG',
+    'BH': 'PG', 'OM': 'PG', 'SA': 'PG',
+    'SD': 'RED SEA', 'YE': 'RED SEA', 'DJ': 'RED SEA', 'JO': 'RED SEA', 'ER': 'RED SEA',
+    'ZA': 'SAFC', 'NA': 'SAFC',
+    'SG': 'SEAS', 'MY': 'SEAS', 'ID': 'SEAS', 'PH': 'SEAS', 'VN': 'SEAS',
+    'TH': 'SEAS', 'MM': 'SEAS', 'KH': 'SEAS', 'BN': 'SEAS', 'TL': 'SEAS',
+    'CU': 'CARRIBEAN', 'JM': 'CARRIBEAN', 'TT': 'CARRIBEAN', 'BB': 'CARRIBEAN',
+    'DO': 'CARRIBEAN', 'HT': 'CARRIBEAN', 'BS': 'CARRIBEAN', 'LC': 'CARRIBEAN',
+    'VC': 'CARRIBEAN', 'GD': 'CARRIBEAN', 'AG': 'CARRIBEAN', 'DM': 'CARRIBEAN',
+    'KN': 'CARRIBEAN', 'TC': 'CARRIBEAN',
+    'NG': 'WAFC', 'GH': 'WAFC', 'CI': 'WAFC', 'CM': 'WAFC', 'AO': 'WAFC',
+    'SN': 'WAFC', 'TG': 'WAFC', 'BJ': 'WAFC', 'GA': 'WAFC', 'GN': 'WAFC',
+    'GW': 'WAFC', 'SL': 'WAFC', 'LR': 'WAFC', 'MR': 'WAFC', 'CV': 'WAFC',
+    'GQ': 'WAFC', 'ST': 'WAFC', 'CD': 'WAFC', 'CG': 'WAFC',
+    'GT': 'WCCA', 'SV': 'WCCA', 'HN': 'WCCA', 'NI': 'WCCA', 'CR': 'WCCA', 'PA': 'WCCA',
+    'CL': 'WCSA', 'PE': 'WCSA',
+    'PK': 'WCI', 'LK': 'ECI', 'BD': 'ECI', 'MV': 'WCI',
+    'RU': 'CIS',
+    'FR': 'MED',
+}
+
+_US_STATE_ZONE = {
+    'ME': 'USEC', 'NH': 'USEC', 'VT': 'USEC', 'MA': 'USEC', 'RI': 'USEC',
+    'CT': 'USEC', 'NY': 'USEC', 'NJ': 'USEC', 'DE': 'USEC', 'MD': 'USEC',
+    'VA': 'USEC', 'NC': 'USEC', 'SC': 'USEC', 'GA': 'USEC', 'PA': 'USEC',
+    'FL': 'USG', 'AL': 'USG', 'MS': 'USG', 'LA': 'USG', 'TX': 'USG',
+    'CA': 'USWC', 'OR': 'USWC', 'WA': 'USWC', 'AK': 'USWC', 'HI': 'USWC',
+}
+
+_IN_STATE_ZONE = {
+    'GJ': 'WCI', 'MH': 'WCI', 'GA': 'WCI', 'KL': 'WCI', 'KA': 'WCI', 'DD': 'WCI',
+    'WB': 'ECI', 'OD': 'ECI', 'OR': 'ECI', 'AP': 'ECI', 'TN': 'ECI', 'PY': 'ECI',
+}
+
+def load_unlocode_dict():
+    """Build port name → zone mapping from all three UN/LOCODE CSV parts."""
+    mapping = {}
+    folder = resource_path("csv")
+    for i in range(1, 4):
+        path = os.path.join(folder, f"UNLOCODE CodeListPart{i}.csv")
+        if not os.path.exists(path):
+            logger.warning(f"UN/LOCODE part {i} not found at {path}")
+            continue
+        with open(path, mode="r", encoding="latin-1") as f:
+            for row in csv.reader(f):
+                if len(row) < 7:
+                    continue
+                country = row[1].strip().upper()
+                name = row[4].strip().upper()
+                subdivision = row[5].strip().upper() if len(row) > 5 else ''
+                func = row[6].strip()
+                # Only seaports (function code starts with '1')
+                if not func or func[0] != '1':
+                    continue
+                if not name or not country:
+                    continue
+                if country == 'US':
+                    zone = _US_STATE_ZONE.get(subdivision)
+                elif country == 'IN':
+                    zone = _IN_STATE_ZONE.get(subdivision)
+                else:
+                    zone = _COUNTRY_ZONE.get(country)
+                if zone and name not in mapping:
+                    mapping[name] = [zone]
+    logger.info(f"UN/LOCODE: loaded {len(mapping)} port entries")
+    return mapping
 
 def load_csv_into_dict(csv_file):
     mapping = {}
@@ -329,20 +426,108 @@ def merge_custom_zones(csv_mapping):
                 csv_mapping[key].append(zone)
     return csv_mapping
 
-def lookup_value(input_text, mapping):
+_PORT_NOISE = re.compile(
+    r'^(PORT OF|PORT|ANCHORAGE(?: AT)?|TERMINAL|BERTH|ROADS?|OUTER|INNER|WEST|EAST|NORTH|SOUTH)\s+',
+    re.IGNORECASE,
+)
 
+def _normalize_port(name):
+    """Strip common prefixes/suffixes that obscure the core port name."""
+    name = name.strip().upper()
+    # Remove leading noise words iteratively (e.g. "PORT OF OUTER HAMBURG" → "HAMBURG")
+    prev = None
+    while prev != name:
+        prev = name
+        name = _PORT_NOISE.sub('', name).strip()
+    return name
+
+_ZONE_CODES = {
+    'AUS', 'BALTIC', 'BSEA', 'CARRIBEAN', 'CIS', 'CONTI', 'EAFC',
+    'ECI', 'ECSA', 'FE', 'MED', 'NCSA', 'PG', 'RED SEA', 'SAFC',
+    'SEAS', 'USEC', 'USG', 'USWC', 'WAFC', 'WCCA', 'WCI', 'WCSA',
+}
+
+_COUNTRY_NAME_ZONE = {
+    # Far East
+    'CHINA': 'FE', 'JAPAN': 'FE', 'SOUTH KOREA': 'FE', 'KOREA': 'FE',
+    'TAIWAN': 'FE', 'HONG KONG': 'FE', 'NORTH KOREA': 'FE',
+    # South East Asia
+    'SINGAPORE': 'SEAS', 'MALAYSIA': 'SEAS', 'INDONESIA': 'SEAS',
+    'PHILIPPINES': 'SEAS', 'VIETNAM': 'SEAS', 'THAILAND': 'SEAS',
+    'MYANMAR': 'SEAS', 'CAMBODIA': 'SEAS', 'BRUNEI': 'SEAS',
+    # India (ambiguous — skip, brokers use WCI/ECI directly)
+    # Persian Gulf
+    'UAE': 'PG', 'UNITED ARAB EMIRATES': 'PG', 'SAUDI ARABIA': 'PG',
+    'KUWAIT': 'PG', 'IRAQ': 'PG', 'IRAN': 'PG', 'QATAR': 'PG',
+    'BAHRAIN': 'PG', 'OMAN': 'PG',
+    # Mediterranean
+    'ITALY': 'MED', 'GREECE': 'MED', 'SPAIN': 'MED', 'TURKEY': 'MED',
+    'FRANCE': 'MED', 'CROATIA': 'MED', 'EGYPT': 'MED', 'LIBYA': 'MED',
+    'TUNISIA': 'MED', 'ALGERIA': 'MED', 'MOROCCO': 'MED', 'ISRAEL': 'MED',
+    'LEBANON': 'MED', 'CYPRUS': 'MED', 'MALTA': 'MED',
+    # Continent
+    'NETHERLANDS': 'CONTI', 'HOLLAND': 'CONTI', 'BELGIUM': 'CONTI',
+    'GERMANY': 'CONTI', 'UK': 'CONTI', 'UNITED KINGDOM': 'CONTI',
+    'NORWAY': 'CONTI', 'PORTUGAL': 'CONTI',
+    # Baltic
+    'FINLAND': 'BALTIC', 'SWEDEN': 'BALTIC', 'DENMARK': 'BALTIC',
+    'POLAND': 'BALTIC', 'ESTONIA': 'BALTIC', 'LATVIA': 'BALTIC', 'LITHUANIA': 'BALTIC',
+    # Black Sea
+    'UKRAINE': 'BSEA', 'ROMANIA': 'BSEA', 'BULGARIA': 'BSEA', 'GEORGIA': 'BSEA',
+    # CIS
+    'RUSSIA': 'CIS', 'KAZAKHSTAN': 'CIS',
+    # Red Sea
+    'SUDAN': 'RED SEA', 'YEMEN': 'RED SEA', 'DJIBOUTI': 'RED SEA',
+    'JORDAN': 'RED SEA', 'ERITREA': 'RED SEA',
+    # East/South Africa
+    'KENYA': 'EAFC', 'TANZANIA': 'EAFC', 'MOZAMBIQUE': 'EAFC',
+    'MADAGASCAR': 'EAFC', 'SOMALIA': 'EAFC',
+    'SOUTH AFRICA': 'SAFC', 'NAMIBIA': 'SAFC',
+    # West Africa
+    'NIGERIA': 'WAFC', 'GHANA': 'WAFC', 'IVORY COAST': 'WAFC',
+    'COTE D\'IVOIRE': 'WAFC', 'CAMEROON': 'WAFC', 'ANGOLA': 'WAFC',
+    'SENEGAL': 'WAFC', 'TOGO': 'WAFC', 'GABON': 'WAFC',
+    # Australia
+    'AUSTRALIA': 'AUS', 'NEW ZEALAND': 'AUS',
+    # Americas
+    'BRAZIL': 'ECSA', 'ARGENTINA': 'ECSA', 'URUGUAY': 'ECSA',
+    'CHILE': 'WCSA', 'PERU': 'WCSA',
+    'COLOMBIA': 'NCSA', 'VENEZUELA': 'NCSA',
+    'MEXICO': 'WCCA', 'PANAMA': 'WCCA', 'GUATEMALA': 'WCCA',
+    'CUBA': 'CARRIBEAN', 'JAMAICA': 'CARRIBEAN',
+    # US (ambiguous — skip, brokers use USEC/USG/USWC directly)
+}
+
+def lookup_value(input_text, mapping):
     input_text = input_text.strip().upper()
 
-    if input_text in mapping:
-        return ", ".join(mapping[input_text])
+    if input_text in _ZONE_CODES:
+        return input_text
 
-    # Substring match
-    substring_matches = [
-        zone for key, zones in mapping.items() if input_text in key or key in input_text for zone in zones
-    ]
-    if substring_matches and len(set(substring_matches)) <= 3:
-        zones = list(set(substring_matches))
-        return ", ".join(zones)
+    if input_text in _COUNTRY_NAME_ZONE:
+        return _COUNTRY_NAME_ZONE[input_text]
+
+    normalized = _normalize_port(input_text)
+
+    for candidate in ([input_text] if input_text == normalized else [input_text, normalized]):
+        if candidate in mapping:
+            return ", ".join(mapping[candidate])
+
+        # Substring match: candidate is contained in a key, or key is contained in candidate
+        substring_matches = [
+            zone for key, zones in mapping.items()
+            if (candidate in key or key in candidate) and len(key) >= 3
+            for zone in zones
+        ]
+        unique = list(dict.fromkeys(substring_matches))  # preserve order, deduplicate
+        if unique and len(unique) <= 3:
+            return ", ".join(unique)
+
+    # Fuzzy match as last resort — high cutoff to avoid false positives, single best result only
+    for candidate in ([input_text] if input_text == normalized else [input_text, normalized]):
+        matches = difflib.get_close_matches(candidate, mapping.keys(), n=1, cutoff=0.9)
+        if matches:
+            return mapping[matches[0]][0]
 
     return "UNKNOWN"
 
@@ -514,6 +699,7 @@ def get_first_n_lines(email_body):
 
     return '\n'.join(result)
 
+
 def extract_details_from_email(preprocessed_body, csv_dict):
     payload = {
         "messages": [
@@ -536,27 +722,35 @@ def extract_details_from_email(preprocessed_body, csv_dict):
             f"Email:\n{preprocessed_body}\n\n"},
         ]
     }
-    headers = {"X-App-Token": _APP_TOKEN}
+    api_payload = {
+        "model": "gpt-5.4-nano",
+        "messages": payload["messages"],
+    }
+    headers = {
+        "Authorization": f"Bearer {API_KEY}",
+        "Content-Type": "application/json",
+    }
     last_error = None
     for attempt in range(3):
         try:
-            resp = requests.post(PROXY_URL, json=payload, headers=headers, timeout=60)
-            if resp.status_code == 401:
-                raise ProxyAuthError("Unauthorized")
+            resp = requests.post(
+                "https://api.openai.com/v1/chat/completions",
+                json=api_payload,
+                headers=headers,
+                timeout=60,
+            )
             resp.raise_for_status()
             data = resp.json()
             break
-        except ProxyAuthError:
-            raise
         except requests.exceptions.RequestException as e:
             last_error = e
             logger.warning(f"API request failed (attempt {attempt + 1}/3): {e}")
             if attempt < 2:
                 time.sleep(2 ** attempt)
     else:
-        raise ProxyAPIError(str(last_error))
+        raise APIError(str(last_error))
 
-    details = data["content"].strip()
+    details = data["choices"][0]["message"]["content"].strip()
 
     vessels = details.split('---')
     extracted_vessels = []
@@ -591,11 +785,12 @@ def extract_details_from_email(preprocessed_body, csv_dict):
             'Vessel Open Date': validate_date(clean(date_of_arrival.group(1) if date_of_arrival else None)),
         }
 
-        if vessel_data['Vessel Open Location'] is None:
-            vessel_data['Zone'] = None
-        else:
-            zone = lookup_value(vessel_data['Vessel Open Location'], csv_dict)
+        open_location = vessel_data['Vessel Open Location']
+        if open_location:
+            zone = lookup_value(open_location, csv_dict)
             vessel_data['Zone'] = zone
+        else:
+            vessel_data['Zone'] = None
 
         extracted_vessels.append(vessel_data)
     return extracted_vessels
@@ -623,19 +818,6 @@ def save_config(config):
     with open(config_file, "w", encoding="utf-8") as f:
         json.dump(config, f, indent=1)
 
-def get_config_value(key, prompt_text, change):
-    config = load_config()
-
-    if key in config and config[key] and change == False:
-        logger.debug(f"Found saved {key}: {config[key]}")
-        return config[key]
-
-    value = input(prompt_text + ": ")
-    config[key] = value
-    save_config(config)
-    return value
-    
-
 def load_email_ids():
     global email_ids
     with _email_ids_lock:
@@ -660,6 +842,51 @@ def save_email_ids():
     with open(email_ids_file, "w", encoding="utf-8") as f:
         json.dump(ids_list, f)
 
+
+
+def check_and_reset_monthly_count():
+    config = load_config()
+    current_month = datetime.now().strftime("%Y-%m")
+    if config.get("month_year", "") != current_month:
+        config["monthly_count"] = 0
+        config["month_year"] = current_month
+        save_config(config)
+
+
+def increment_monthly_count():
+    config = load_config()
+    count = config.get("monthly_count", 0) + 1
+    config["monthly_count"] = count
+    save_config(config)
+    return count
+
+
+def is_pro_active():
+    return load_config().get("is_pro", False)
+
+
+def validate_license_key(key: str) -> bool:
+    import hmac as _hmac
+    import hashlib
+    import base64
+    try:
+        key = key.strip().upper()
+        parts = key.split("-")
+        if len(parts) != 3 or parts[0] != "MAILAI":
+            return False
+        year_month = parts[1]
+        sig = parts[2]
+        if len(year_month) != 6 or not year_month.isdigit():
+            return False
+        key_date = datetime.strptime(year_month, "%Y%m")
+        if (datetime.now() - key_date).days > 35:
+            return False
+        expected = base64.b32encode(
+            _hmac.new(_LICENSE_SECRET.encode(), year_month.encode(), hashlib.sha256).digest()
+        )[:10].decode()
+        return _hmac.compare_digest(sig, expected)
+    except Exception:
+        return False
 
 
 def validate(date, time_str, email_address, folder, excel_path, outlook, language="English"):
@@ -961,18 +1188,19 @@ def process_email(email_address,folder,excel_path,csv_dict,worker):
                         preprocessed_body = get_first_n_lines(email_body)
 
                         if preprocessed_body:
+                            if not is_pro_active() and load_config().get("monthly_count", 0) >= MONTHLY_LIMIT:
+                                yield {"type": "limit_reached"}
+                                return
                             try:
                                 extracted_details = extract_details_from_email(preprocessed_body, csv_dict)
-                            except ProxyAuthError:
-                                yield {"type": "api_error", "error_key": "proxy_auth_error"}
-                                return
-                            except ProxyAPIError:
+                            except APIError:
                                 yield {"type": "api_error", "error_key": "proxy_error_generic"}
                                 return
                             valid_vessels = filter_data(extracted_details)
                             vessels = detect_duplicates(valid_vessels)
 
                             if vessels:
+                                increment_monthly_count()
                                 for vessel in vessels:
                                     vessel['Sender'] = sender_email
                                     vessel['Subject'] = email_subject
@@ -1053,18 +1281,19 @@ def night_extraction(specific_datetime,email_address,folder,excel_path,csv_dict)
                         logger.info(f"Processing email from: {sender_email} with subject: {email_subject}")
                         preprocessed_body = get_first_n_lines(email_body)
                         if preprocessed_body:
+                            if not is_pro_active() and load_config().get("monthly_count", 0) >= MONTHLY_LIMIT:
+                                yield {"type": "limit_reached"}
+                                return
                             try:
                                 extracted_details = extract_details_from_email(preprocessed_body, csv_dict)
-                            except ProxyAuthError:
-                                yield {"type": "api_error", "error_key": "proxy_auth_error"}
-                                return
-                            except ProxyAPIError:
+                            except APIError:
                                 yield {"type": "api_error", "error_key": "proxy_error_generic"}
                                 return
                             valid_vessels = filter_data(extracted_details)
                             vessels = detect_duplicates(valid_vessels)
 
                             if vessels:
+                                increment_monthly_count()
                                 for vessel in vessels:
                                     vessel['Sender'] = sender_email
                                     vessel['Subject'] = email_subject
