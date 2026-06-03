@@ -63,9 +63,18 @@ MIT — see [LICENSE](LICENSE)
 
 v1.0 - Initial release
 
-v1.1 - What's changed:
+v1.1 - What's new:
 - **Vessel build year** is now extracted alongside MV, deadweight etc.
 - Listening mode fixed
 - Size reduced by **half**, from 150MB to 75MB
 - Extraction table screen now stays **upon leaving main extraction screen**
 - Custom zones fixed - are now **saved across sessions**
+
+v1.2 - What's new:
+- Greatly improved **zone detection**
+- Greatly improved **email filtering**
+
+v1.3 - What's new:
+- Freemium model introduced - Mail AI is now free for up to 200 email extractions per month. Extraction pauses automatically when the limit is reached and resets on the 1st of each month.
+- Pro tier - Unlimited extractions for £9/month via Ko-fi. Enter your monthly license key in Settings to activate.
+- Privacy page - mailai.uk/privacy documents exactly what the app accesses, what gets sent to OpenAI, and what stays on your machine.
