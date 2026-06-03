@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Download Mail AI — automated vessel position extraction from shipbroking emails to Excel." />
+  <title>Download — Mail AI</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='4' fill='%2322d3ee'/><circle cx='16' cy='16' r='11' fill='none' stroke='%230891b2' stroke-width='1.5'/></svg>" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --navy:    #080f1a;
+      --deep:    #0a1628;
+      --surface: #0d1f35;
+      --card:    #0f2440;
+      --border:  #1a3a5c;
+      --teal:    #0891b2;
+      --teal-lt: #22d3ee;
+      --teal-glow: #06b6d4;
+      --white:   #f0f9ff;
+      --mid:     #7ca4c0;
+      --dim:     #3a5a78;
+      --font-display: 'Syne', sans-serif;
+      --font-mono: 'DM Mono', monospace;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--navy);
+      color: var(--white);
+      font-family: var(--font-display);
+      overflow-x: hidden;
+      cursor: none;
+    }
+
+    /* ── Custom cursor ── */
+    .cursor {
+      position: fixed;
+      width: 8px; height: 8px;
+      background: var(--teal-lt);
+      border-radius: 50%;
+      pointer-events: none;
+      z-index: 9999;
+      transition: transform 0.1s ease;
+      mix-blend-mode: screen;
+    }
+    .cursor-ring {
+      position: fixed;
+      width: 32px; height: 32px;
+      border: 1px solid var(--teal);
+      border-radius: 50%;
+      pointer-events: none;
+      z-index: 9998;
+      transition: transform 0.15s ease, width 0.2s, height 0.2s, opacity 0.2s;
+      opacity: 0.5;
+    }
+
+    /* ── Noise overlay ── */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+      opacity: 0.4;
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    /* ── Grid background ── */
+    body::after {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(var(--border) 1px, transparent 1px),
+        linear-gradient(90deg, var(--border) 1px, transparent 1px);
+      background-size: 60px 60px;
+      opacity: 0.15;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* ── Nav ── */
+    nav {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      z-index: 9500;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 1.25rem 3rem;
+      background: rgba(8, 15, 26, 0.7);
+      backdrop-filter: blur(20px);
+      border-bottom: 1px solid rgba(8, 145, 178, 0.1);
+    }
+
+    .nav-logo {
+      font-size: 1.1rem;
+      font-weight: 800;
+      letter-spacing: 0.15em;
+      color: var(--white);
+      text-transform: uppercase;
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      text-decoration: none;
+    }
+
+    .nav-logo-dot {
+      width: 8px; height: 8px;
+      background: var(--teal-lt);
+      border-radius: 50%;
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); box-shadow: 0 0 0 0 rgba(34,211,238,0.4); }
+      50% { opacity: 0.8; transform: scale(1.2); box-shadow: 0 0 0 8px rgba(34,211,238,0); }
+    }
+
+    .nav-links {
+      display: flex;
+      gap: 2.5rem;
+      list-style: none;
+    }
+
+    .nav-links a {
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      color: var(--mid);
+      text-decoration: none;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      transition: color 0.2s;
+      position: relative;
+    }
+
+    .nav-links a::after {
+      content: '';
+      position: absolute;
+      bottom: -2px; left: 0;
+      width: 0; height: 1px;
+      background: var(--teal-lt);
+      transition: width 0.3s ease;
+    }
+
+    .nav-links a:hover { color: var(--teal-lt); }
+    .nav-links a:hover::after { width: 100%; }
+    .nav-links a.active { color: var(--teal-lt); }
+    .nav-links a.active::after { width: 100%; }
+
+    /* ── Hamburger button ── */
+    .nav-toggle {
+      display: none;
+      flex-direction: column;
+      gap: 5px;
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 4px;
+      z-index: 200;
+    }
+    .nav-toggle span {
+      display: block;
+      width: 24px;
+      height: 2px;
+      background: var(--white);
+      transition: transform 0.3s, opacity 0.3s;
+    }
+    .nav-toggle.active span:nth-child(1) { transform: translateY(7px) rotate(45deg); }
+    .nav-toggle.active span:nth-child(2) { opacity: 0; }
+    .nav-toggle.active span:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
+
+    /* ── Section helpers ── */
+    .section-label {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--teal);
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .section-label::before {
+      content: '';
+      width: 24px; height: 1px;
+      background: var(--teal);
+    }
+
+    /* ── Hero ── */
+    .download-hero {
+      position: relative;
+      z-index: 2;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 10rem 3rem 5rem;
+      display: flex;
+      align-items: flex-start;
+      gap: 4rem;
+    }
+
+    .download-hero-left {
+      flex: 1;
+    }
+
+    .download-hero-icon {
+      width: 64px; height: 64px;
+      border: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 2rem;
+      background: var(--surface);
+    }
+
+    .download-hero-icon svg {
+      width: 28px; height: 28px;
+      stroke: var(--teal-lt);
+      fill: none;
+      stroke-width: 1.5;
+    }
+
+    .download-hero-title {
+      font-size: clamp(2.5rem, 5vw, 4.5rem);
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      line-height: 1;
+      margin-bottom: 1.25rem;
+    }
+
+    .download-hero-sub {
+      font-family: var(--font-mono);
+      font-size: 0.95rem;
+      color: var(--mid);
+      line-height: 1.7;
+      margin-bottom: 2.5rem;
+      max-width: 520px;
+    }
+
+    .download-actions {
+      display: flex;
+      align-items: center;
+      gap: 1.5rem;
+      flex-wrap: wrap;
+      margin-bottom: 2rem;
+    }
+
+    .btn-download {
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--navy);
+      background: var(--teal-lt);
+      border: none;
+      padding: 1.1rem 2.5rem;
+      cursor: pointer;
+      text-decoration: none;
+      transition: all 0.2s ease;
+      position: relative;
+      overflow: hidden;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.6rem;
+    }
+
+    .btn-download::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: var(--white);
+      transform: translateX(-100%);
+      transition: transform 0.3s ease;
+    }
+
+    .btn-download:hover::before { transform: translateX(0); }
+    .btn-download > * { position: relative; z-index: 1; }
+    .btn-download svg {
+      width: 18px; height: 18px;
+      stroke: var(--navy);
+      fill: none;
+      stroke-width: 2;
+    }
+
+    .download-meta {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      color: var(--dim);
+      letter-spacing: 0.05em;
+    }
+
+    .download-version {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      color: var(--dim);
+      letter-spacing: 0.05em;
+    }
+
+    .download-hero-right {
+      flex: 0 0 440px;
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+      background: var(--border);
+      border: 1px solid var(--border);
+      margin-top: 10rem;
+    }
+
+    .info-card {
+      background: var(--deep);
+      padding: 3rem;
+      position: relative;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+    }
+
+    .info-card-title {
+      font-family: var(--font-mono);
+      font-size: 0.95rem;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--teal);
+      margin-bottom: 1.75rem;
+    }
+
+    .info-card-list {
+      list-style: none;
+    }
+
+    .info-card-list li {
+      font-family: var(--font-mono);
+      font-size: 0.95rem;
+      color: var(--mid);
+      line-height: 2.6;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .info-card-list li::before {
+      content: '';
+      width: 5px; height: 5px;
+      background: var(--teal-lt);
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    /* ── Divider ── */
+    .divider {
+      position: relative;
+      z-index: 2;
+      height: 1px;
+      background: var(--border);
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    /* ── FAQ section ── */
+    .faq-section {
+      position: relative;
+      z-index: 2;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 6rem 3rem;
+    }
+
+    .faq-title {
+      font-size: clamp(1.8rem, 3.5vw, 2.8rem);
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      line-height: 1.1;
+      margin-bottom: 3.5rem;
+    }
+
+    .faq-list {
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+      background: var(--border);
+      border: 1px solid var(--border);
+    }
+
+    .faq-item {
+      background: var(--deep);
+      padding: 2rem 2.5rem;
+      transition: background 0.3s;
+    }
+
+    .faq-item:hover { background: var(--surface); }
+
+    .faq-q {
+      font-size: 0.95rem;
+      font-weight: 700;
+      margin-bottom: 0.6rem;
+      letter-spacing: -0.01em;
+    }
+
+    .faq-a {
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      color: var(--mid);
+      line-height: 1.7;
+    }
+
+    /* ── Footer ── */
+    footer {
+      position: relative;
+      z-index: 2;
+      padding: 2rem 3rem;
+      border-top: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .footer-logo {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--dim);
+    }
+
+    .footer-copy {
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      color: var(--dim);
+    }
+
+    /* ── Animations ── */
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(24px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .fade-in {
+      opacity: 0;
+      transform: translateY(20px);
+      transition: opacity 0.6s ease, transform 0.6s ease;
+    }
+    .fade-in.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    /* ── Glow orb ── */
+    .glow-orb {
+      position: absolute;
+      right: 15%;
+      top: 15%;
+      width: 600px; height: 600px;
+      background: radial-gradient(circle, rgba(8,145,178,0.12) 0%, transparent 70%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* ── Responsive: tablet ── */
+    @media (max-width: 1024px) {
+      nav { padding: 1.25rem 2rem; }
+      .download-hero { padding: 8rem 2rem 4rem; gap: 2.5rem; }
+      .faq-section { padding: 5rem 2rem; }
+      footer { padding: 2rem; }
+    }
+
+    /* ── Responsive: mobile ── */
+    @media (max-width: 768px) {
+      .nav-toggle { display: flex; }
+
+      .nav-links {
+        position: fixed;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(8, 15, 26, 0.92);
+        flex-direction: column;
+        align-items: center;
+        justify-content: flex-start;
+        padding-top: 3rem;
+        gap: 2.5rem;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.3s;
+        z-index: 3;
+      }
+      .nav-links.open {
+        opacity: 1;
+        pointer-events: auto;
+      }
+      .nav-toggle { z-index: 9001; }
+      .nav-links a { font-size: 1.3rem; color: var(--white); }
+
+      .download-hero {
+        flex-direction: column;
+        padding: 7rem 1.25rem 3rem;
+        gap: 2rem;
+      }
+
+      .download-hero-right {
+        flex: none;
+        width: 100%;
+        margin-top: 0;
+      }
+
+      .download-actions {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      .faq-section { padding: 4rem 1.25rem; }
+      nav { padding: 1rem 1.25rem; }
+
+      footer {
+        padding: 1.5rem 1.25rem;
+        flex-direction: column;
+        gap: 0.75rem;
+        text-align: center;
+      }
+    }
+
+    @media (max-width: 480px) {
+      .download-hero-title {
+        font-size: clamp(2rem, 9vw, 2.8rem);
+      }
+      .faq-item {
+        padding: 1.5rem 1.25rem;
+      }
+    }
+
+    /* ── Touch devices ── */
+    @media (hover: none) and (pointer: coarse) {
+      body { cursor: auto; }
+      .cursor, .cursor-ring { display: none !important; }
+      .btn-download { cursor: pointer; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Custom cursor -->
+  <div class="cursor" id="cursor"></div>
+  <div class="cursor-ring" id="cursorRing"></div>
+
+  <!-- Nav -->
+  <nav>
+    <a href="index.html" class="nav-logo">
+      <div class="nav-logo-dot"></div>
+      MAIL AI
+    </a>
+    <button class="nav-toggle" id="navToggle" aria-label="Toggle menu">
+      <span></span><span></span><span></span>
+    </button>
+    <ul class="nav-links" id="navLinks">
+      <li><a href="index.html#how">How it works</a></li>
+      <li><a href="index.html#features">Features</a></li>
+      <li><a href="index.html#pricing">Pricing</a></li>
+      <li><a href="download.html" class="active">Download</a></li>
+      <li><a href="index.html#contact">Contact</a></li>
+      <li><a href="privacy.html">Privacy</a></li>
+    </ul>
+  </nav>
+
+  <!-- Hero -->
+  <section style="position:relative; overflow:hidden;">
+    <div class="glow-orb"></div>
+    <div class="download-hero">
+      <div class="download-hero-left">
+        <div class="download-hero-icon">
+          <svg viewBox="0 0 24 24"><path d="M12 3v13M12 16l-5-5M12 16l5-5"/><path d="M4 21h16"/></svg>
+        </div>
+        <p class="section-label">Get started</p>
+        <h1 class="download-hero-title">Download<br>Mail AI</h1>
+        <p class="download-hero-sub">One executable, no installation required. Run it, connect your Outlook, and start extracting vessel positions in seconds.</p>
+        <div class="download-actions">
+          <a href="thanks.html" class="btn-download">
+            <svg viewBox="0 0 24 24"><path d="M12 3v13M12 16l-5-5M12 16l5-5"/><path d="M4 21h16"/></svg>
+            <span>Download for Windows</span>
+          </a>
+          <span class="download-meta">Windows 10+ · Portable · ~70 MB</span>
+        </div>
+        <span class="download-version">Latest version · v1.2</span>
+      </div>
+      <div class="download-hero-right">
+        <div class="info-card">
+          <div class="info-card-title">System requirements</div>
+          <ul class="info-card-list">
+            <li>Windows 10 or later</li>
+            <li>Microsoft Outlook (desktop app)</li>
+            <li>Internet connection</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="divider"></div>
+
+  <!-- FAQ -->
+  <section class="faq-section">
+    <p class="section-label">FAQ</p>
+    <h2 class="faq-title">Common questions.</h2>
+    <div class="faq-list">
+      <div class="faq-item fade-in">
+        <div class="faq-q">Is my data sent to external servers?</div>
+        <div class="faq-a">The relevant text from matching emails is sent to OpenAI's API for extraction. No data is sent to or stored by Mail AI — see the <a href="privacy.html" style="color:var(--teal-lt);text-decoration:none;border-bottom:1px solid rgba(34,211,238,0.3);">Privacy</a> page for full details.</div>
+      </div>
+      <div class="faq-item fade-in">
+        <div class="faq-q">Do I need to install anything else?</div>
+        <div class="faq-a">No. Mail AI is a single portable executable. You just need Outlook already installed on your PC and an active internet connection.</div>
+      </div>
+      <div class="faq-item fade-in">
+        <div class="faq-q">Does it work with Outlook on the web?</div>
+        <div class="faq-a">Currently Mail AI connects via the desktop Outlook COM API. Web-based Outlook and the new Outlook app are not yet supported.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer>
+    <div class="footer-logo">Mail AI · mailai.uk</div>
+    <div class="footer-copy">&copy; 2026 Mail AI. All rights reserved.</div>
+  </footer>
+
+  <script>
+    // Touch detection
+    const isTouch = window.matchMedia('(hover: none) and (pointer: coarse)').matches;
+
+    // Custom cursor (desktop only)
+    const cursor = document.getElementById('cursor');
+    const ring = document.getElementById('cursorRing');
+
+    if (!isTouch) {
+      let mx = 0, my = 0, rx = 0, ry = 0;
+
+      document.addEventListener('mousemove', e => {
+        mx = e.clientX; my = e.clientY;
+        cursor.style.left = mx - 4 + 'px';
+        cursor.style.top  = my - 4 + 'px';
+      });
+
+      function animateRing() {
+        rx += (mx - rx - 16) * 0.12;
+        ry += (my - ry - 16) * 0.12;
+        ring.style.left = rx + 'px';
+        ring.style.top  = ry + 'px';
+        requestAnimationFrame(animateRing);
+      }
+      animateRing();
+
+      document.querySelectorAll('a, button').forEach(el => {
+        el.addEventListener('mouseenter', () => {
+          ring.style.width = '48px';
+          ring.style.height = '48px';
+          ring.style.opacity = '0.8';
+        });
+        el.addEventListener('mouseleave', () => {
+          ring.style.width = '32px';
+          ring.style.height = '32px';
+          ring.style.opacity = '0.5';
+        });
+      });
+    }
+
+    // Mobile nav toggle
+    const navToggle = document.getElementById('navToggle');
+    const navLinks = document.getElementById('navLinks');
+
+    navToggle.addEventListener('click', () => {
+      navToggle.classList.toggle('active');
+      navLinks.classList.toggle('open');
+    });
+
+    navLinks.querySelectorAll('a').forEach(link => {
+      link.addEventListener('click', () => {
+        navToggle.classList.remove('active');
+        navLinks.classList.remove('open');
+      });
+    });
+
+    // Scroll reveal
+    const observer = new IntersectionObserver(entries => {
+      entries.forEach(e => {
+        if (e.isIntersecting) e.target.classList.add('visible');
+        else e.target.classList.remove('visible');
+      });
+    }, { threshold: 0.15 });
+
+    document.querySelectorAll('.fade-in').forEach(el => observer.observe(el));
+  </script>
+</body>
+</html>

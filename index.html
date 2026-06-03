@@ -1,0 +1,1346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Mail AI automatically extracts vessel position data from shipbroking emails into Excel. Powered by GPT." />
+  <title>Mail AI — Automated Vessel Data Extraction</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='4' fill='%2322d3ee'/><circle cx='16' cy='16' r='11' fill='none' stroke='%230891b2' stroke-width='1.5'/></svg>" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --navy:    #080f1a;
+      --deep:    #0a1628;
+      --surface: #0d1f35;
+      --card:    #0f2440;
+      --border:  #1a3a5c;
+      --teal:    #0891b2;
+      --teal-lt: #22d3ee;
+      --teal-glow: #06b6d4;
+      --white:   #f0f9ff;
+      --mid:     #7ca4c0;
+      --dim:     #3a5a78;
+      --font-display: 'Syne', sans-serif;
+      --font-mono: 'DM Mono', monospace;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--navy);
+      color: var(--white);
+      font-family: var(--font-display);
+      overflow-x: hidden;
+      cursor: none;
+    }
+
+    /* ── Custom cursor ── */
+    .cursor {
+      position: fixed;
+      width: 8px; height: 8px;
+      background: var(--teal-lt);
+      border-radius: 50%;
+      pointer-events: none;
+      z-index: 9999;
+      transition: transform 0.1s ease;
+      mix-blend-mode: screen;
+    }
+    .cursor-ring {
+      position: fixed;
+      width: 32px; height: 32px;
+      border: 1px solid var(--teal);
+      border-radius: 50%;
+      pointer-events: none;
+      z-index: 9998;
+      transition: transform 0.15s ease, width 0.2s, height 0.2s, opacity 0.2s;
+      opacity: 0.5;
+    }
+
+    /* ── Noise overlay ── */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+      opacity: 0.4;
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    /* ── Grid background ── */
+    body::after {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(var(--border) 1px, transparent 1px),
+        linear-gradient(90deg, var(--border) 1px, transparent 1px);
+      background-size: 60px 60px;
+      opacity: 0.15;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* ── Nav ── */
+    nav {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      z-index: 9500;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 1.25rem 3rem;
+      background: rgba(8, 15, 26, 0.7);
+      backdrop-filter: blur(20px);
+      border-bottom: 1px solid rgba(8, 145, 178, 0.1);
+    }
+
+    .nav-logo {
+      font-size: 1.1rem;
+      font-weight: 800;
+      letter-spacing: 0.15em;
+      color: var(--white);
+      text-transform: uppercase;
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+    }
+
+    .nav-logo-dot {
+      width: 8px; height: 8px;
+      background: var(--teal-lt);
+      border-radius: 50%;
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); box-shadow: 0 0 0 0 rgba(34,211,238,0.4); }
+      50% { opacity: 0.8; transform: scale(1.2); box-shadow: 0 0 0 8px rgba(34,211,238,0); }
+    }
+
+    .nav-links {
+      display: flex;
+      gap: 2.5rem;
+      list-style: none;
+    }
+
+    .nav-links a {
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      color: var(--mid);
+      text-decoration: none;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      transition: color 0.2s;
+      position: relative;
+    }
+
+    .nav-links a::after {
+      content: '';
+      position: absolute;
+      bottom: -2px; left: 0;
+      width: 0; height: 1px;
+      background: var(--teal-lt);
+      transition: width 0.3s ease;
+    }
+
+    .nav-links a:hover { color: var(--teal-lt); }
+    .nav-links a:hover::after { width: 100%; }
+
+    /* ── Hero ── */
+    .hero {
+      position: relative;
+      z-index: 2;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: 0 3rem;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .hero-eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--teal);
+      margin-bottom: 1.5rem;
+      opacity: 0;
+      animation: fadeUp 0.8s ease 0.2s forwards;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .hero-eyebrow::before {
+      content: '';
+      width: 32px; height: 1px;
+      background: var(--teal);
+    }
+
+    .hero-title {
+      font-size: clamp(3.5rem, 8vw, 7rem);
+      font-weight: 800;
+      line-height: 0.95;
+      letter-spacing: -0.03em;
+      margin-bottom: 2rem;
+      opacity: 0;
+      animation: fadeUp 0.8s ease 0.4s forwards;
+    }
+
+    .hero-title .accent {
+      color: transparent;
+      -webkit-text-stroke: 1px var(--teal);
+      display: block;
+    }
+
+    .hero-title .accent-filled {
+      background: linear-gradient(135deg, var(--teal-lt), var(--teal));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .hero-sub {
+      font-family: var(--font-mono);
+      font-size: 1rem;
+      color: var(--mid);
+      max-width: 480px;
+      line-height: 1.7;
+      margin-bottom: 3rem;
+      opacity: 0;
+      animation: fadeUp 0.8s ease 0.6s forwards;
+    }
+
+    .hero-cta {
+      display: flex;
+      gap: 1rem;
+      opacity: 0;
+      animation: fadeUp 0.8s ease 0.8s forwards;
+    }
+
+    .btn-primary {
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--navy);
+      background: var(--teal-lt);
+      border: none;
+      padding: 0.9rem 2rem;
+      cursor: none;
+      text-decoration: none;
+      transition: all 0.2s ease;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .btn-primary::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: var(--white);
+      transform: translateX(-100%);
+      transition: transform 0.3s ease;
+    }
+
+    .btn-primary:hover::before { transform: translateX(0); }
+    .btn-primary span { position: relative; z-index: 1; }
+
+    .btn-secondary {
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--teal-lt);
+      background: transparent;
+      border: 1px solid var(--border);
+      padding: 0.9rem 2rem;
+      cursor: none;
+      text-decoration: none;
+      transition: all 0.2s ease;
+    }
+
+    .btn-secondary:hover {
+      border-color: var(--teal);
+      background: rgba(8,145,178,0.08);
+    }
+
+    /* ── Glow orb ── */
+    .glow-orb {
+      position: absolute;
+      right: -10%;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 600px; height: 600px;
+      background: radial-gradient(circle, rgba(8,145,178,0.12) 0%, transparent 70%);
+      pointer-events: none;
+      animation: orbFloat 6s ease-in-out infinite;
+    }
+
+    @keyframes orbFloat {
+      0%, 100% { transform: translateY(-50%) scale(1); }
+      50% { transform: translateY(-52%) scale(1.05); }
+    }
+
+    /* ── Scroll indicator ── */
+    .scroll-hint {
+      position: absolute;
+      bottom: 2.5rem;
+      left: 3rem;
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--dim);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      opacity: 0;
+      animation: fadeUp 0.8s ease 1.2s forwards;
+    }
+
+    .scroll-line {
+      width: 1px; height: 40px;
+      background: linear-gradient(to bottom, var(--teal), transparent);
+      animation: scrollPulse 2s ease-in-out infinite;
+    }
+
+    @keyframes scrollPulse {
+      0%, 100% { opacity: 0.3; }
+      50% { opacity: 1; }
+    }
+
+    /* ── Pipeline section ── */
+    .section {
+      position: relative;
+      z-index: 2;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 8rem 3rem;
+    }
+
+    .section-label {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--teal);
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .section-label::before {
+      content: '';
+      width: 24px; height: 1px;
+      background: var(--teal);
+    }
+
+    .section-title {
+      font-size: clamp(2rem, 4vw, 3.2rem);
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      line-height: 1.1;
+      margin-bottom: 4rem;
+    }
+
+    /* ── Pipeline ── */
+    .pipeline {
+      display: flex;
+      gap: 0;
+      position: relative;
+    }
+
+    .pipeline::before {
+      content: '';
+      position: absolute;
+      top: 2.5rem;
+      left: 2.5rem;
+      right: 2.5rem;
+      height: 1px;
+      background: linear-gradient(90deg, var(--teal), var(--teal-lt), var(--teal));
+      opacity: 0.3;
+    }
+
+    .pipeline-step {
+      flex: 1;
+      padding: 2rem 1.5rem 1.5rem;
+      position: relative;
+      opacity: 0;
+      transform: translateY(20px);
+      transition: opacity 0.5s ease, transform 0.5s ease;
+    }
+
+    .pipeline-step.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .step-num {
+      font-family: var(--font-mono);
+      font-size: 0.65rem;
+      letter-spacing: 0.15em;
+      color: var(--teal);
+      margin-bottom: 2.5rem;
+    }
+
+    .step-icon {
+      width: 44px; height: 44px;
+      border: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 1.25rem;
+      position: relative;
+      background: var(--surface);
+      transition: border-color 0.3s, background 0.3s;
+    }
+
+    .pipeline-step:hover .step-icon {
+      border-color: var(--teal);
+      background: rgba(8,145,178,0.1);
+    }
+
+    .step-icon svg { width: 20px; height: 20px; stroke: var(--teal-lt); fill: none; stroke-width: 1.5; }
+
+    .step-title {
+      font-size: 0.95rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+      letter-spacing: -0.01em;
+    }
+
+    .step-desc {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      color: var(--mid);
+      line-height: 1.6;
+    }
+
+    /* ── Features grid ── */
+    .features {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1px;
+      background: var(--border);
+      border: 1px solid var(--border);
+      margin-top: 2rem;
+    }
+
+    .feature-card {
+      background: var(--deep);
+      padding: 2.5rem 2rem;
+      position: relative;
+      overflow: hidden;
+      opacity: 0;
+      transform: translateY(16px);
+      transition: opacity 0.5s ease, transform 0.5s ease, background 0.3s;
+    }
+
+    .feature-card.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .feature-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 2px;
+      background: linear-gradient(90deg, var(--teal), transparent);
+      transform: scaleX(0);
+      transform-origin: left;
+      transition: transform 0.4s ease;
+    }
+
+    .feature-card:hover { background: var(--surface); }
+    .feature-card:hover::before { transform: scaleX(1); }
+
+    .feature-num {
+      font-family: var(--font-mono);
+      font-size: 0.65rem;
+      letter-spacing: 0.15em;
+      color: var(--dim);
+      margin-bottom: 1.5rem;
+    }
+
+    .feature-title {
+      font-size: 1.1rem;
+      font-weight: 700;
+      margin-bottom: 0.75rem;
+      letter-spacing: -0.01em;
+    }
+
+    .feature-desc {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      color: var(--mid);
+      line-height: 1.7;
+    }
+
+    /* ── Terminal block ── */
+    .terminal {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      padding: 2rem;
+      margin-top: 5rem;
+      position: relative;
+      opacity: 0;
+      transform: translateY(20px);
+      transition: opacity 0.6s ease, transform 0.6s ease;
+    }
+
+    .terminal.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .terminal-bar {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 1.5rem;
+      padding-bottom: 1rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .terminal-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+    }
+
+    .terminal-dot:nth-child(1) { background: #ff5f57; }
+    .terminal-dot:nth-child(2) { background: #febc2e; }
+    .terminal-dot:nth-child(3) { background: #28c840; }
+
+    .terminal-title {
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      color: var(--dim);
+      margin-left: 0.5rem;
+      letter-spacing: 0.05em;
+    }
+
+    .terminal-line {
+      font-family: var(--font-mono);
+      font-size: 0.82rem;
+      line-height: 1.8;
+      color: var(--mid);
+    }
+
+    .terminal-line .prompt { color: var(--teal); }
+    .terminal-line .vessel { color: var(--teal-lt); }
+    .terminal-line .value { color: #a5f3fc; }
+    .terminal-line .comment { color: var(--dim); }
+
+    /* ── Stats ── */
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1px;
+      background: var(--border);
+      border: 1px solid var(--border);
+    }
+
+    .stat-item {
+      background: var(--deep);
+      padding: 3rem 2.5rem;
+      text-align: center;
+      opacity: 0;
+      transform: translateY(16px);
+      transition: opacity 0.5s ease, transform 0.5s ease;
+    }
+
+    .stat-item.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .stat-num {
+      font-size: clamp(2.5rem, 5vw, 4rem);
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      background: linear-gradient(135deg, var(--teal-lt), var(--teal));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      display: block;
+      margin-bottom: 0.5rem;
+    }
+
+    .stat-label {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--mid);
+    }
+
+    /* ── CTA section ── */
+    .cta-section {
+      position: relative;
+      z-index: 2;
+      text-align: center;
+      padding: 8rem 3rem;
+      border-top: 1px solid var(--border);
+    }
+
+    .cta-section::before {
+      content: '';
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      width: 800px; height: 400px;
+      background: radial-gradient(ellipse, rgba(8,145,178,0.08) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    .cta-title {
+      font-size: clamp(2.5rem, 5vw, 4.5rem);
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      margin-bottom: 1.5rem;
+      position: relative;
+    }
+
+    .cta-sub {
+      font-family: var(--font-mono);
+      font-size: 0.9rem;
+      color: var(--mid);
+      margin-bottom: 3rem;
+      position: relative;
+    }
+
+    /* ── Footer ── */
+    footer {
+      position: relative;
+      z-index: 2;
+      padding: 2rem 3rem;
+      border-top: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .footer-logo {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--dim);
+    }
+
+    .footer-copy {
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      color: var(--dim);
+    }
+
+    /* ── Animations ── */
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(24px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ── Horizontal divider ── */
+    .divider {
+      position: relative;
+      z-index: 2;
+      height: 1px;
+      background: var(--border);
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    /* ── Stagger delays ── */
+    .pipeline-step:nth-child(1) { transition-delay: 0.0s; }
+    .pipeline-step:nth-child(2) { transition-delay: 0.1s; }
+    .pipeline-step:nth-child(3) { transition-delay: 0.2s; }
+    .pipeline-step:nth-child(4) { transition-delay: 0.3s; }
+    .pipeline-step:nth-child(5) { transition-delay: 0.4s; }
+
+    .feature-card:nth-child(1) { transition-delay: 0.0s; }
+    .feature-card:nth-child(2) { transition-delay: 0.08s; }
+    .feature-card:nth-child(3) { transition-delay: 0.16s; }
+    .feature-card:nth-child(4) { transition-delay: 0.24s; }
+    .feature-card:nth-child(5) { transition-delay: 0.32s; }
+    .feature-card:nth-child(6) { transition-delay: 0.40s; }
+
+    .stat-item:nth-child(1) { transition-delay: 0.0s; }
+    .stat-item:nth-child(2) { transition-delay: 0.1s; }
+    .stat-item:nth-child(3) { transition-delay: 0.2s; }
+
+    /* ── Floating email lines ── */
+    .email-ticker {
+      position: absolute;
+      right: 3rem;
+      top: 56%;
+      transform: translateY(-50%);
+      width: 480px;
+      opacity: 0;
+      animation: fadeUp 0.8s ease 1s forwards;
+    }
+
+    .ticker-label {
+      font-family: var(--font-mono);
+      font-size: 0.65rem;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--dim);
+      margin-bottom: 0.75rem;
+      padding-left: 1rem;
+      border-left: 2px solid var(--teal);
+    }
+
+    .ticker-box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      padding: 1.25rem 1.5rem;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .ticker-box::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 2px;
+      background: linear-gradient(90deg, var(--teal), var(--teal-lt), transparent);
+    }
+
+    .ticker-line {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      color: var(--teal-lt);
+      line-height: 2;
+      opacity: 0;
+      animation: tickerFade 0.4s ease forwards;
+    }
+
+    .ticker-line:nth-child(1) { animation-delay: 1.2s; }
+    .ticker-line:nth-child(2) { animation-delay: 1.5s; }
+    .ticker-line:nth-child(3) { animation-delay: 1.8s; }
+    .ticker-line:nth-child(4) { animation-delay: 2.1s; }
+    .ticker-line:nth-child(5) { animation-delay: 2.4s; }
+
+    .ticker-line .extracted {
+      color: #a5f3fc;
+    }
+
+    @keyframes tickerFade {
+      from { opacity: 0; transform: translateX(-8px); }
+      to   { opacity: 1; transform: translateX(0); }
+    }
+
+    .ticker-cursor {
+      display: inline-block;
+      width: 6px; height: 12px;
+      background: var(--teal-lt);
+      vertical-align: middle;
+      animation: blink 1s step-end infinite;
+      margin-left: 2px;
+    }
+
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0; }
+    }
+
+    /* ── Hamburger button ── */
+    .nav-toggle {
+      display: none;
+      flex-direction: column;
+      gap: 5px;
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 4px;
+      z-index: 200;
+    }
+    .nav-toggle span {
+      display: block;
+      width: 24px;
+      height: 2px;
+      background: var(--white);
+      transition: transform 0.3s, opacity 0.3s;
+    }
+    .nav-toggle.active span:nth-child(1) { transform: translateY(7px) rotate(45deg); }
+    .nav-toggle.active span:nth-child(2) { opacity: 0; }
+    .nav-toggle.active span:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
+
+    /* ── Pricing ── */
+    .pricing-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 1px;
+      background: var(--border);
+      border: 1px solid var(--border);
+      margin-top: 2rem;
+    }
+
+    .pricing-card {
+      background: var(--deep);
+      padding: 3rem 2.5rem;
+      position: relative;
+      opacity: 0;
+      transform: translateY(16px);
+      transition: opacity 0.5s ease, transform 0.5s ease, background 0.3s;
+    }
+
+    .pricing-card.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .pricing-card-pro {
+      background: var(--surface);
+      border-left: 2px solid var(--teal);
+    }
+
+    .pricing-tier-label {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--teal);
+      margin-bottom: 1.25rem;
+    }
+
+    .pricing-amount {
+      font-size: clamp(2.2rem, 4vw, 3.2rem);
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      line-height: 1;
+      margin-bottom: 0.4rem;
+    }
+
+    .pricing-amount span {
+      font-family: var(--font-mono);
+      font-size: 0.9rem;
+      font-weight: 400;
+      color: var(--mid);
+    }
+
+    .pricing-period {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      color: var(--dim);
+      letter-spacing: 0.05em;
+      margin-bottom: 2rem;
+    }
+
+    .pricing-features {
+      list-style: none;
+      margin-bottom: 2.5rem;
+    }
+
+    .pricing-features li {
+      font-family: var(--font-mono);
+      font-size: 0.82rem;
+      color: var(--mid);
+      line-height: 1.5;
+      display: flex;
+      align-items: flex-start;
+      gap: 0.65rem;
+      margin-bottom: 0.75rem;
+    }
+
+    .pricing-features li::before {
+      content: '';
+      width: 5px; height: 5px;
+      background: var(--teal-lt);
+      border-radius: 50%;
+      flex-shrink: 0;
+      margin-top: 0.45em;
+    }
+
+    .pricing-card .btn-primary::before,
+    .pricing-card .btn-secondary::before { display: none; }
+    .pricing-card .btn-primary:hover { background: var(--white); }
+    .pricing-card .btn-secondary:hover { background: rgba(8,145,178,0.12); border-color: var(--teal-lt); }
+
+    /* ── Responsive: tablet (<=1024px) ── */
+    @media (max-width: 1024px) {
+      .hero { padding: 0 2rem; }
+      .section { padding: 5rem 2rem; }
+      .cta-section { padding: 5rem 2rem; }
+      nav { padding: 1.25rem 2rem; }
+      footer { padding: 2rem; }
+
+      .email-ticker {
+        position: relative;
+        right: auto;
+        top: auto;
+        transform: none;
+        width: 100%;
+        margin-top: 3rem;
+      }
+
+      .pipeline {
+        flex-wrap: wrap;
+      }
+      .pipeline::before { display: none; }
+      .pipeline-step {
+        flex: 1 1 calc(33.33% - 1rem);
+        min-width: 180px;
+      }
+
+      .features {
+        grid-template-columns: repeat(2, 1fr);
+      }
+
+      .glow-orb {
+        width: 350px;
+        height: 350px;
+        right: -15%;
+      }
+    }
+
+    /* ── Responsive: mobile (<=768px) ── */
+    @media (max-width: 768px) {
+      .pricing-grid { grid-template-columns: 1fr; max-width: 100%; }
+
+      .nav-toggle { display: flex; }
+
+      .nav-links {
+        position: fixed;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(8, 15, 26, 0.92);
+        flex-direction: column;
+        align-items: center;
+        justify-content: flex-start;
+        padding-top: 4rem;
+        gap: 2.5rem;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.3s;
+        z-index: 9000;
+      }
+      .nav-links.open {
+        opacity: 1;
+        pointer-events: auto;
+      }
+      .nav-toggle { z-index: 9001; }
+      .nav-links a {
+        font-size: 1.3rem;
+        color: var(--white);
+      }
+
+      .hero {
+        padding: 0 1.25rem;
+        min-height: auto;
+        padding-top: 7rem;
+        padding-bottom: 4rem;
+      }
+
+      .hero-title {
+        font-size: clamp(2.2rem, 10vw, 3.5rem);
+      }
+
+      .hero-sub {
+        font-size: 0.88rem;
+      }
+
+      .hero-cta {
+        flex-direction: column;
+        gap: 0.75rem;
+      }
+      .hero-cta a {
+        text-align: center;
+      }
+
+      .section { padding: 4rem 1.25rem; }
+      .cta-section { padding: 4rem 1.25rem; }
+      nav { padding: 1rem 1.25rem; }
+      footer {
+        padding: 1.5rem 1.25rem;
+        flex-direction: column;
+        gap: 0.75rem;
+        text-align: center;
+      }
+
+      .pipeline-step {
+        flex: 1 1 100%;
+        padding: 1.5rem 1rem;
+      }
+
+      .features {
+        grid-template-columns: 1fr;
+      }
+
+      .stats {
+        grid-template-columns: 1fr;
+      }
+
+      .stat-item {
+        padding: 2rem 1.5rem;
+      }
+
+      .terminal {
+        padding: 1.25rem;
+        margin-top: 3rem;
+      }
+
+      .glow-orb { display: none; }
+
+      .scroll-hint { display: none; }
+
+      .section-title {
+        margin-bottom: 2.5rem;
+      }
+
+      .email-ticker {
+        position: relative;
+        right: auto;
+        top: auto;
+        transform: none;
+        width: 100%;
+        margin-top: 2.5rem;
+      }
+    }
+
+    /* ── Responsive: small mobile (<=480px) ── */
+    @media (max-width: 480px) {
+      .hero-title {
+        font-size: clamp(1.8rem, 9vw, 2.5rem);
+      }
+
+      .feature-card {
+        padding: 1.75rem 1.25rem;
+      }
+
+      .cta-title {
+        font-size: clamp(1.8rem, 7vw, 2.5rem);
+      }
+    }
+
+    /* ── Touch devices: disable custom cursor ── */
+    @media (hover: none) and (pointer: coarse) {
+      body { cursor: auto; }
+      .cursor, .cursor-ring { display: none !important; }
+      .btn-primary, .btn-secondary { cursor: pointer; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Custom cursor -->
+  <div class="cursor" id="cursor"></div>
+  <div class="cursor-ring" id="cursorRing"></div>
+
+  <!-- Nav -->
+  <nav>
+    <div class="nav-logo">
+      <div class="nav-logo-dot"></div>
+      MAIL AI
+    </div>
+    <button class="nav-toggle" id="navToggle" aria-label="Toggle menu">
+      <span></span><span></span><span></span>
+    </button>
+    <ul class="nav-links" id="navLinks">
+      <li><a href="#how">How it works</a></li>
+      <li><a href="#features">Features</a></li>
+      <li><a href="#pricing">Pricing</a></li>
+      <li><a href="download.html">Download</a></li>
+      <li><a href="#contact">Contact</a></li>
+      <li><a href="privacy.html">Privacy</a></li>
+    </ul>
+  </nav>
+
+  <!-- Hero -->
+  <section style="position:relative; z-index:2;">
+    <div class="hero">
+      <div class="glow-orb"></div>
+
+      <p class="hero-eyebrow">Vessel Position Intelligence</p>
+
+      <h1 class="hero-title">
+        <span>Automate</span>
+        <span class="accent">the noise.</span>
+        <span class="accent-filled">Extract the signal.</span>
+      </h1>
+
+      <p class="hero-sub">
+        Mail AI reads your Outlook inbox and extracts vessel position data from shipbroking emails — instantly, accurately, continuously.
+      </p>
+
+      <div class="hero-cta">
+        <a href="download.html" class="btn-primary"><span>Download</span></a>
+        <a href="#how" class="btn-secondary">See how it works</a>
+      </div>
+
+      <!-- Live ticker -->
+      <div class="email-ticker">
+        <div class="ticker-label">Live extraction</div>
+        <div class="ticker-box">
+          <div class="ticker-line">MV <span class="extracted">LUCKY LOONG</span> · 76K · 2015 · DALIAN · 28 JAN</div>
+          <div class="ticker-line">MV <span class="extracted">YANGTZE GRACE</span> · 32K · 2012 · CALLAO · 30 JUN</div>
+          <div class="ticker-line">MV <span class="extracted">IKAN SELIGI</span> · 56K · 2019 · SIHANOUKVILLE · 26 DEC</div>
+          <div class="ticker-line">MV <span class="extracted">PRINCESS JOANNA</span> · 56K · 2009 · HEREKE · 2 OCT</div>
+          <div class="ticker-line">→ Writing to Excel<span class="ticker-cursor"></span></div>
+        </div>
+      </div>
+
+      <div class="scroll-hint">
+        <div class="scroll-line"></div>
+        Scroll
+      </div>
+    </div>
+  </section>
+
+  <!-- Pipeline -->
+  <section class="section" id="how">
+    <p class="section-label">The pipeline</p>
+    <h2 class="section-title">From inbox<br>to spreadsheet.</h2>
+
+    <div class="pipeline">
+      <div class="pipeline-step">
+        <div class="step-num">01</div>
+        <div class="step-icon">
+          <svg viewBox="0 0 24 24"><path d="M4 4h16v16H4z"/><path d="M4 8l8 6 8-6"/></svg>
+        </div>
+        <div class="step-title">Read emails</div>
+        <div class="step-desc">Connects directly to Outlook via COM API. Filters by email, folder and date range.</div>
+      </div>
+      <div class="pipeline-step">
+        <div class="step-num">02</div>
+        <div class="step-icon">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/></svg>
+        </div>
+        <div class="step-title">AI extraction</div>
+        <div class="step-desc">GPT processes each email and extracts vessel name, deadweight, build year, port, and open date.</div>
+      </div>
+      <div class="pipeline-step">
+        <div class="step-num">03</div>
+        <div class="step-icon">
+          <svg viewBox="0 0 24 24"><path d="M8 9l3 3-3 3M13 15h3"/></svg>
+        </div>
+        <div class="step-title">Parse & clean</div>
+        <div class="step-desc">Regex normalises output. Inconsistent formats are standardised automatically.</div>
+      </div>
+      <div class="pipeline-step">
+        <div class="step-num">04</div>
+        <div class="step-icon">
+          <svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>
+        </div>
+        <div class="step-title">Deduplicate</div>
+        <div class="step-desc">Fuzzy name matching removes duplicate vessel entries across sessions.</div>
+      </div>
+      <div class="pipeline-step">
+        <div class="step-num">05</div>
+        <div class="step-icon">
+          <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="1"/><path d="M3 9h18M9 21V9"/></svg>
+        </div>
+        <div class="step-title">Write to Excel</div>
+        <div class="step-desc">Structured data is appended to your spreadsheet with port zone lookup.</div>
+      </div>
+    </div>
+
+    <!-- Terminal -->
+    <div class="terminal">
+      <div class="terminal-bar">
+        <div class="terminal-dot"></div>
+        <div class="terminal-dot"></div>
+        <div class="terminal-dot"></div>
+        <span class="terminal-title">mail_ai — extraction log</span>
+      </div>
+      <div class="terminal-line"><span class="prompt">→</span> Accessing folder: <span class="value">shipbroking</span></div>
+      <div class="terminal-line"><span class="prompt">→</span> Processing email from: <span class="value">broker@shipping.com</span></div>
+      <div class="terminal-line"><span class="prompt">→</span> Extracted: <span class="vessel">MV LUCKY LOONG</span> · <span class="value">76K</span> · <span class="value">2015</span> · <span class="value">DALIAN</span> · <span class="value">28 JAN</span></div>
+      <div class="terminal-line"><span class="prompt">→</span> Extracted: <span class="vessel">MV YANGTZE GRACE</span> · <span class="value">32K</span> · <span class="value">2012</span> · <span class="value">CALLAO</span> · <span class="value">30 JUN</span></div>
+      <div class="terminal-line"><span class="comment"># Zone lookup: DALIAN → FAR EAST · CALLAO → WEST COAST SOUTH AMERICA</span></div>
+      <div class="terminal-line"><span class="prompt">→</span> Written to <span class="value">extraction.xlsx</span> <span class="comment">— 2 vessels appended</span></div>
+    </div>
+  </section>
+
+  <div class="divider"></div>
+
+  <!-- Features -->
+  <section class="section" id="features">
+    <p class="section-label">Capabilities</p>
+    <h2 class="section-title">Built for the<br>shipping desk.</h2>
+
+    <div class="features">
+      <div class="feature-card">
+        <div class="feature-num">01</div>
+        <div class="feature-title">Live listening</div>
+        <div class="feature-desc">Monitor your inbox in real-time. New emails are processed the moment they arrive, with a pause/resume toggle.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-num">02</div>
+        <div class="feature-title">Smart deduplication</div>
+        <div class="feature-desc">MV prefix variants, ordinal dates, and fuzzy name matches are all normalised before duplicate checking.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-num">03</div>
+        <div class="feature-title">Port zone mapping</div>
+        <div class="feature-desc">Every extracted port is automatically mapped to its trade zone using the World Port Index.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-num">04</div>
+        <div class="feature-title">Bilingual interface</div>
+        <div class="feature-desc">Full English and simplified Chinese UI with live switching. Designed for international shipping desks.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-num">05</div>
+        <div class="feature-title">Robust parsing</div>
+        <div class="feature-desc">Regex-based field extraction means one malformed AI response never breaks the entire batch.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-num">06</div>
+        <div class="feature-title">Excel native</div>
+        <div class="feature-desc">Data writes directly to your existing .xlsx file. No new tools, no exports — it just appears in your spreadsheet.</div>
+      </div>
+    </div>
+  </section>
+
+  <div class="divider"></div>
+
+  <!-- Stats -->
+  <section class="section">
+    <div class="stats">
+      <div class="stat-item">
+        <span class="stat-num">50+</span>
+        <span class="stat-label">Emails processed per session</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-num">&lt;3s</span>
+        <span class="stat-label">Per email extraction time</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-num">0</span>
+        <span class="stat-label">Manual copy-paste required</span>
+      </div>
+    </div>
+  </section>
+
+  <div class="divider"></div>
+
+  <!-- Pricing -->
+  <section class="section" id="pricing">
+    <p class="section-label">Pricing</p>
+    <h2 class="section-title">Simple, transparent<br>pricing.</h2>
+    <div class="pricing-grid">
+
+      <div class="pricing-card">
+        <div class="pricing-tier-label">Free</div>
+        <div class="pricing-amount">£0</div>
+        <div class="pricing-period">forever</div>
+        <ul class="pricing-features">
+          <li>200 email extractions per month</li>
+          <li>Full extraction to Excel</li>
+          <li>All vessel fields — MV, DWT, location, open date, zone</li>
+          <li>Resets automatically on the 1st of each month</li>
+        </ul>
+        <a href="download.html" class="btn-secondary"><span>Download free</span></a>
+      </div>
+
+      <div class="pricing-card pricing-card-pro">
+        <div class="pricing-tier-label">Pro</div>
+        <div class="pricing-amount">£9 <span>/month</span></div>
+        <div class="pricing-period">billed monthly · cancel any time</div>
+        <ul class="pricing-features">
+          <li>Unlimited email extractions</li>
+          <li>Everything in Free</li>
+          <li>Monthly license key delivered automatically</li>
+          <li>Supports ongoing development</li>
+        </ul>
+        <a href="http://ko-fi.com/mailaiuk/tiers" class="btn-primary"><span>Subscribe — £9/month</span></a>
+      </div>
+
+    </div>
+  </section>
+
+  <div class="divider"></div>
+
+  <!-- CTA -->
+  <section class="cta-section" id="contact">
+    <h2 class="cta-title">Ready to stop<br>copying and pasting?</h2>
+    <p class="cta-sub">Get in touch to learn more or request a demo.</p>
+    <a href="mailto:hello@mailai.uk" class="btn-primary"><span>hello@mailai.uk</span></a>
+  </section>
+
+  <!-- Footer -->
+  <footer>
+    <div class="footer-logo">Mail AI · mailai.uk</div>
+    <div class="footer-copy">© 2026 Mail AI. All rights reserved.</div>
+  </footer>
+
+  <script>
+    // Touch detection — disable custom cursor on touch devices
+    const isTouch = window.matchMedia('(hover: none) and (pointer: coarse)').matches;
+
+    // Custom cursor (desktop only)
+    const cursor = document.getElementById('cursor');
+    const ring = document.getElementById('cursorRing');
+
+    if (!isTouch) {
+      let mx = 0, my = 0, rx = 0, ry = 0;
+
+      document.addEventListener('mousemove', e => {
+        mx = e.clientX; my = e.clientY;
+        cursor.style.left = mx - 4 + 'px';
+        cursor.style.top  = my - 4 + 'px';
+      });
+
+      function animateRing() {
+        rx += (mx - rx - 16) * 0.12;
+        ry += (my - ry - 16) * 0.12;
+        ring.style.left = rx + 'px';
+        ring.style.top  = ry + 'px';
+        requestAnimationFrame(animateRing);
+      }
+      animateRing();
+
+      document.querySelectorAll('a, button').forEach(el => {
+        el.addEventListener('mouseenter', () => {
+          ring.style.width = '48px';
+          ring.style.height = '48px';
+          ring.style.opacity = '0.8';
+        });
+        el.addEventListener('mouseleave', () => {
+          ring.style.width = '32px';
+          ring.style.height = '32px';
+          ring.style.opacity = '0.5';
+        });
+      });
+    }
+
+    // Mobile nav toggle
+    const navToggle = document.getElementById('navToggle');
+    const navLinks = document.getElementById('navLinks');
+
+    navToggle.addEventListener('click', () => {
+      navToggle.classList.toggle('active');
+      navLinks.classList.toggle('open');
+    });
+
+    navLinks.querySelectorAll('a').forEach(link => {
+      link.addEventListener('click', () => {
+        navToggle.classList.remove('active');
+        navLinks.classList.remove('open');
+      });
+    });
+
+    // Scroll reveal
+    const observer = new IntersectionObserver(entries => {
+      entries.forEach(e => {
+        if (e.isIntersecting) e.target.classList.add('visible');
+        else e.target.classList.remove('visible');
+      });
+    }, { threshold: 0.15 });
+
+    document.querySelectorAll('.pipeline-step, .feature-card, .pricing-card, .stat-item, .terminal').forEach(el => {
+      observer.observe(el);
+    });
+  </script>
+</body>
+</html>
