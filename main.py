@@ -501,7 +501,7 @@ class MainWindow(QMainWindow):
 
         self.sidebar_layout.addStretch()
 
-        ver = QLabel("  mailai.uk         v1.2")
+        ver = QLabel("  mailai.uk         v1.3")
         ver.setFixedHeight(40)
         ver.setStyleSheet("""
             font-family: 'DM Mono';
@@ -1332,10 +1332,10 @@ class MainWindow(QMainWindow):
         self._current_excel = resolve_excel_path(self.excel)
         self.show_main_page()
 
-        generator = night_extraction(dt, self.email_address, self.folder, self._current_excel, csv_dict)
-
         self.thread = QThread()
-        self.worker = ExtractWorker(generator)
+        self.worker = ExtractWorker(None)
+        generator = night_extraction(dt, self.email_address, self.folder, self._current_excel, csv_dict, self.worker)
+        self.worker.generator = generator
         self.worker.moveToThread(self.thread)
 
         self.worker.new_email.connect(self.add_email_to_table)
@@ -1592,7 +1592,7 @@ class MainWindow(QMainWindow):
             self.statusl.setText(t("listening_paused", self.language))
             self.lbox.setStyleSheet("background-color: rgba(255, 165, 0, 100); margin-left: -10px;")
         else:
-            # resume — wait for old thread to finish before creating a new one
+            # resume — if old thread still winding down, wait non-blocking via signal
             try:
                 thread_running = (
                     hasattr(self, "listen_thread")
@@ -1603,19 +1603,22 @@ class MainWindow(QMainWindow):
                 self.listen_thread = None
                 thread_running = False
             if thread_running:
-                self.listen_thread.wait(10000)
                 try:
-                    if self.listen_thread and self.listen_thread.isRunning():
-                        return
-                except RuntimeError:
-                    self.listen_thread = None
-            if not is_pro_active() and load_config().get("monthly_count", 0) >= MONTHLY_LIMIT:
-                self.show_upgrade_dialog()
-                return
-            self.handle_listen()
-            self.listen_toggle_btn.setText(t("pause_listen", self.language))
-            self.statusl.setText(t("listening_running", self.language))
-            self.lbox.setStyleSheet("background-color: rgba(0, 255, 0, 100); margin-left: -10px;")
+                    self.listen_thread.finished.disconnect(self._restart_listening)
+                except (RuntimeError, TypeError):
+                    pass
+                self.listen_thread.finished.connect(self._restart_listening)
+            else:
+                self._restart_listening()
+
+    def _restart_listening(self):
+        if not is_pro_active() and load_config().get("monthly_count", 0) >= MONTHLY_LIMIT:
+            self.show_upgrade_dialog()
+            return
+        self.handle_listen()
+        self.listen_toggle_btn.setText(t("pause_listen", self.language))
+        self.statusl.setText(t("listening_running", self.language))
+        self.lbox.setStyleSheet("background-color: rgba(0, 255, 0, 100); margin-left: -10px;")
 
     def open_excel_file(self):
         path = getattr(self, '_current_excel', None) or resolve_excel_path(self.excel)
