@@ -14,6 +14,9 @@ import difflib
 from math import log10, floor
 import threading
 import logging
+import hmac as _hmac
+import hashlib
+import base64
 
 logging.basicConfig(
     level=logging.INFO,
@@ -847,9 +850,16 @@ def save_email_ids():
 def check_and_reset_monthly_count():
     config = load_config()
     current_month = datetime.now().strftime("%Y-%m")
+    changed = False
     if config.get("month_year", "") != current_month:
         config["monthly_count"] = 0
         config["month_year"] = current_month
+        changed = True
+    stored_key = config.get("license_key", "")
+    if config.get("is_pro", False) and not validate_license_key(stored_key):
+        config["is_pro"] = False
+        changed = True
+    if changed:
         save_config(config)
 
 
@@ -866,9 +876,6 @@ def is_pro_active():
 
 
 def validate_license_key(key: str) -> bool:
-    import hmac as _hmac
-    import hashlib
-    import base64
     try:
         key = key.strip().upper()
         parts = key.split("-")
@@ -1163,6 +1170,7 @@ def process_email(email_address,folder,excel_path,csv_dict,worker):
             if not worker.running:
                 return
 
+            check_and_reset_monthly_count()
             messages = folder.Items
             messages.Sort("[ReceivedTime]", True)
             message = messages.GetFirst()
@@ -1171,14 +1179,14 @@ def process_email(email_address,folder,excel_path,csv_dict,worker):
                 if not worker.running:
                     return
 
+                if hasattr(message, 'ReceivedTime'):
+                    received_time = message.ReceivedTime
+                    if received_time.replace(tzinfo=None) < start_time:
+                        break
+
                 with _email_ids_lock:
                     already_seen = message.EntryID in email_ids
                 if not already_seen and hasattr(message, 'ReceivedTime'):
-                    received_time = message.ReceivedTime
-                    if received_time.replace(tzinfo=None) < start_time:
-                        message = messages.GetNext()
-                        continue
-
                     email_body = message.Body
                     email_subject = message.Subject
                     sender_email = message.SenderEmailAddress
@@ -1188,7 +1196,8 @@ def process_email(email_address,folder,excel_path,csv_dict,worker):
                         preprocessed_body = get_first_n_lines(email_body)
 
                         if preprocessed_body:
-                            if not is_pro_active() and load_config().get("monthly_count", 0) >= MONTHLY_LIMIT:
+                            cfg = load_config()
+                            if not cfg.get("is_pro", False) and cfg.get("monthly_count", 0) >= MONTHLY_LIMIT:
                                 yield {"type": "limit_reached"}
                                 return
                             try:
@@ -1241,7 +1250,7 @@ def process_email(email_address,folder,excel_path,csv_dict,worker):
 
 
 
-def night_extraction(specific_datetime,email_address,folder,excel_path,csv_dict):
+def night_extraction(specific_datetime, email_address, folder, excel_path, csv_dict, worker):
 
     pythoncom.CoInitialize()
     try:
@@ -1262,11 +1271,14 @@ def night_extraction(specific_datetime,email_address,folder,excel_path,csv_dict)
         messages = folder.Items
         messages.Sort("[ReceivedTime]", True)
         message = messages.GetFirst()
+        check_and_reset_monthly_count()
 
         processed_emails = []
         ves = 0
 
         while message:
+            if not worker.running:
+                return
             if hasattr(message, 'ReceivedTime'):
                 received_time = message.ReceivedTime
 
@@ -1281,7 +1293,8 @@ def night_extraction(specific_datetime,email_address,folder,excel_path,csv_dict)
                         logger.info(f"Processing email from: {sender_email} with subject: {email_subject}")
                         preprocessed_body = get_first_n_lines(email_body)
                         if preprocessed_body:
-                            if not is_pro_active() and load_config().get("monthly_count", 0) >= MONTHLY_LIMIT:
+                            cfg = load_config()
+                            if not cfg.get("is_pro", False) and cfg.get("monthly_count", 0) >= MONTHLY_LIMIT:
                                 yield {"type": "limit_reached"}
                                 return
                             try:
