@@ -316,6 +316,19 @@ _COUNTRY_ZONE = {
     'PK': 'WCI', 'LK': 'ECI', 'BD': 'ECI', 'MV': 'WCI',
     'RU': 'CIS',
     'FR': 'MED',
+    # --- additional coastal countries (single dominant zone) ---
+    'GI': 'MED', 'MC': 'MED', 'BA': 'MED', 'SY': 'MED', 'PS': 'MED',
+    'FO': 'CONTI', 'GL': 'CONTI', 'AX': 'BALTIC',
+    'GM': 'WAFC', 'SH': 'WAFC',
+    'RE': 'EAFC', 'YT': 'EAFC',
+    'PG': 'SEAS',
+    'FJ': 'AUS', 'NC': 'AUS', 'SB': 'AUS', 'VU': 'AUS', 'PF': 'AUS',
+    'GU': 'FE',
+    'BZ': 'CARRIBEAN', 'PR': 'CARRIBEAN', 'AW': 'CARRIBEAN', 'CW': 'CARRIBEAN',
+    'KY': 'CARRIBEAN', 'VG': 'CARRIBEAN', 'VI': 'CARRIBEAN', 'AI': 'CARRIBEAN',
+    'MS': 'CARRIBEAN', 'SX': 'CARRIBEAN', 'BQ': 'CARRIBEAN', 'BL': 'CARRIBEAN',
+    'MF': 'CARRIBEAN', 'BM': 'CARRIBEAN',
+    'EC': 'WCSA', 'FK': 'ECSA',
 }
 
 _US_STATE_ZONE = {
@@ -329,6 +342,50 @@ _US_STATE_ZONE = {
 _IN_STATE_ZONE = {
     'GJ': 'WCI', 'MH': 'WCI', 'GA': 'WCI', 'KL': 'WCI', 'KA': 'WCI', 'DD': 'WCI',
     'WB': 'ECI', 'OD': 'ECI', 'OR': 'ECI', 'AP': 'ECI', 'TN': 'ECI', 'PY': 'ECI',
+}
+
+# Canada (2-letter province codes): Pacific vs Atlantic/Lakes.
+_CA_STATE_ZONE = {
+    'BC': 'USWC',
+    'ON': 'USEC', 'QC': 'USEC', 'NL': 'USEC', 'NS': 'USEC',
+    'NB': 'USEC', 'PE': 'USEC', 'MB': 'USEC',
+}
+
+# Mexico (3-letter state codes): Pacific vs Gulf vs Caribbean.
+_MX_STATE_ZONE = {
+    'BCN': 'WCCA', 'BCS': 'WCCA', 'SON': 'WCCA', 'SIN': 'WCCA', 'NAY': 'WCCA',
+    'JAL': 'WCCA', 'COL': 'WCCA', 'MIC': 'WCCA', 'GRO': 'WCCA', 'OAX': 'WCCA',
+    'CHP': 'WCCA',
+    'TAM': 'USG', 'VER': 'USG', 'TAB': 'USG', 'CAM': 'USG', 'YUC': 'USG',
+    'ROO': 'CARRIBEAN',
+}
+
+# Regional / broker shorthand → zone (unambiguous only; ambiguous terms left to log).
+_REGION_ALIAS = {
+    # --- broker shorthand / ranges ---
+    'CJK': 'FE', 'FAR EAST': 'FE', 'F EAST': 'FE',
+    'CJK-JP RANGE': 'FE', 'CJK-JAPAN RANGE': 'FE', 'CJK-JP': 'FE',
+    'CJK-N.CHIAN RANGE': 'FE', 'CJK-N.CHINA RANGE': 'FE', 'NORTH OF CJK': 'FE',
+    'N CHINA': 'FE', 'N.CHINA': 'FE', 'SOUTH CHINA': 'FE', 'S CHINA': 'FE',
+    'HKG': 'FE', 'LYG': 'FE', 'LUOYUAN': 'FE',
+    'SE ASIA': 'SEAS', 'SEASIA': 'SEAS', 'SOUTH EAST ASIA': 'SEAS', 'SPORE': 'SEAS',
+    'SGP': 'SEAS', 'N.VIET': 'SEAS', 'N VIET': 'SEAS', 'E.MALAYSIA': 'SEAS',
+    'E MALAYSIA': 'SEAS', 'ACEH, N. SUMATRA, INDO': 'SEAS', 'ACEH': 'SEAS',
+    'ARA': 'CONTI', 'SKAW': 'CONTI',
+    'GIB': 'MED', 'GIBRALTAR': 'MED', 'FULL MED': 'MED', 'MED RANGE': 'MED',
+    'PMO': 'PG', 'PASSING MUSCAT': 'PG',
+    'RIVER PLATE': 'ECSA', 'RIVERPLATE': 'ECSA',
+    'RECALADA': 'ECSA', 'RECALADA (ARGENTINA)': 'ECSA',
+    'ECI RANGE': 'ECI', 'WCI RANGE': 'WCI',
+    'W. AFR ORDER': 'WAFC', 'W AFR': 'WAFC', 'W.AFR': 'WAFC', 'WEST AFRICA': 'WAFC',
+    'AQABA': 'RED SEA', 'SIERRA LEONE': 'WAFC',
+    # --- alternate / historical / transliterated port names ---
+    'HOCHIMINH': 'SEAS', 'RANGOON': 'SEAS', 'MELAKA': 'SEAS',
+    'KELANG': 'SEAS', 'PORT KELANG': 'SEAS', 'PORT KLANG': 'SEAS', 'KUANTAN': 'SEAS',
+    'FUJARIAH': 'PG',
+    'BAYRUT': 'MED', 'TARABULUS': 'MED', 'ANTWERP': 'CONTI',
+    'CHITTAGONG': 'ECI', 'COCHIN': 'WCI', 'CALICUT': 'WCI', 'MORMUGAO': 'WCI',
+    'VIZAG': 'ECI', 'PIPAVAV': 'WCI', 'PORT BLAIR': 'ECI',
 }
 
 def load_unlocode_dict():
@@ -357,6 +414,10 @@ def load_unlocode_dict():
                     zone = _US_STATE_ZONE.get(subdivision)
                 elif country == 'IN':
                     zone = _IN_STATE_ZONE.get(subdivision)
+                elif country == 'CA':
+                    zone = _CA_STATE_ZONE.get(subdivision)
+                elif country == 'MX':
+                    zone = _MX_STATE_ZONE.get(subdivision)
                 else:
                     zone = _COUNTRY_ZONE.get(country)
                 if zone and name not in mapping:
@@ -501,6 +562,25 @@ _COUNTRY_NAME_ZONE = {
     # US (ambiguous — skip, brokers use USEC/USG/USWC directly)
 }
 
+_collapsed_index_cache = {}
+
+def _collapse_name(s):
+    """Strip everything but letters/digits, for spacing/punctuation-insensitive matching."""
+    return re.sub(r'[^A-Z0-9]', '', s.upper())
+
+def _get_collapsed_index(mapping):
+    """Cached {collapsed_name -> set(zones)} view of the mapping (rebuilt if size changes)."""
+    cached = _collapsed_index_cache.get(id(mapping))
+    if cached is None or cached[0] != len(mapping):
+        idx = {}
+        for k, zones in mapping.items():
+            ck = _collapse_name(k)
+            if len(ck) >= 5:
+                idx.setdefault(ck, set()).update(zones)
+        _collapsed_index_cache[id(mapping)] = (len(mapping), idx)
+        return idx
+    return cached[1]
+
 def lookup_value(input_text, mapping):
     input_text = input_text.strip().upper()
 
@@ -510,27 +590,79 @@ def lookup_value(input_text, mapping):
     if input_text in _COUNTRY_NAME_ZONE:
         return _COUNTRY_NAME_ZONE[input_text]
 
+    if input_text in _REGION_ALIAS:
+        return _REGION_ALIAS[input_text]
+
     normalized = _normalize_port(input_text)
+    candidates = [input_text] if input_text == normalized else [input_text, normalized]
 
-    for candidate in ([input_text] if input_text == normalized else [input_text, normalized]):
+    # Exact port match — return only if it resolves to a single unambiguous zone.
+    for candidate in candidates:
         if candidate in mapping:
-            return ", ".join(mapping[candidate])
+            zones = set(mapping[candidate])
+            if len(zones) == 1:
+                return next(iter(zones))
+            # Multiple zones for one name (shared port name) — ambiguous, abstain.
 
-        # Substring match: candidate is contained in a key, or key is contained in candidate
-        substring_matches = [
-            zone for key, zones in mapping.items()
-            if (candidate in key or key in candidate) and len(key) >= 3
-            for zone in zones
-        ]
-        unique = list(dict.fromkeys(substring_matches))  # preserve order, deduplicate
-        if unique and len(unique) <= 3:
-            return ", ".join(unique)
+    # Substring match — word-boundary only, keys >= 5 chars, single distinct zone only.
+    for candidate in candidates:
+        matched_zones = set()
+        for key, zones in mapping.items():
+            if len(key) < 5:
+                continue
+            key_re = r'\b' + re.escape(key) + r'\b'
+            cand_re = r'\b' + re.escape(candidate) + r'\b'
+            if re.search(key_re, candidate) or re.search(cand_re, key):
+                matched_zones.update(zones)
+        if len(matched_zones) == 1:
+            return next(iter(matched_zones))
+        # Zero matches → try next candidate; multiple distinct zones → ambiguous, abstain.
 
-    # Fuzzy match as last resort — high cutoff to avoid false positives, single best result only
-    for candidate in ([input_text] if input_text == normalized else [input_text, normalized]):
-        matches = difflib.get_close_matches(candidate, mapping.keys(), n=1, cutoff=0.9)
-        if matches:
-            return mapping[matches[0]][0]
+    # Space/punctuation-insensitive match — e.g. "HOCHIMINH" -> "HO CHI MINH CITY".
+    collapsed_index = _get_collapsed_index(mapping)
+    for candidate in candidates:
+        cc = _collapse_name(candidate)
+        if len(cc) < 5:
+            continue
+        exact = collapsed_index.get(cc)
+        if exact and len(exact) == 1:
+            return next(iter(exact))
+        # Only candidate-is-substring-of-key (a shorter form of a fuller port name);
+        # the reverse direction matches port names inside garbage strings, so it's excluded.
+        matched = set()
+        for ck, zones in collapsed_index.items():
+            if cc in ck:
+                matched.update(zones)
+                if len(matched) > 1:
+                    break
+        if len(matched) == 1:
+            return next(iter(matched))
+
+    # Fuzzy match — accept only when unambiguous or a clear margin over a differing zone.
+    for candidate in candidates:
+        matches = difflib.get_close_matches(candidate, mapping.keys(), n=3, cutoff=0.88)
+        if not matches:
+            continue
+        best = matches[0]
+        best_zones = set(mapping[best])
+        if len(best_zones) != 1:
+            continue  # best match itself ambiguous
+        best_zone = next(iter(best_zones))
+        # Find the highest-ranked candidate that maps to a different zone.
+        differing = next((m for m in matches if set(mapping[m]) != {best_zone}), None)
+        if differing is None:
+            return best_zone  # all close matches agree on the same zone
+        best_ratio = difflib.SequenceMatcher(None, candidate, best).ratio()
+        diff_ratio = difflib.SequenceMatcher(None, candidate, differing).ratio()
+        if best_ratio - diff_ratio >= 0.05:
+            return best_zone
+        # Near-tie across different zones — ambiguous, abstain.
+
+    try:
+        with open(data_path("zone_misses.log"), "a", encoding="utf-8") as f:
+            f.write(f"{input_text}\n")
+    except OSError:
+        pass
 
     return "UNKNOWN"
 
@@ -745,7 +877,8 @@ def extract_details_from_email(preprocessed_body, csv_dict):
             resp.raise_for_status()
             data = resp.json()
             break
-        except requests.exceptions.RequestException as e:
+        except (requests.exceptions.RequestException, ValueError) as e:
+            # ValueError covers json.JSONDecodeError (non-JSON body from a proxy/gateway error)
             last_error = e
             logger.warning(f"API request failed (attempt {attempt + 1}/3): {e}")
             if attempt < 2:
@@ -753,7 +886,11 @@ def extract_details_from_email(preprocessed_body, csv_dict):
     else:
         raise APIError(str(last_error))
 
-    details = data["choices"][0]["message"]["content"].strip()
+    try:
+        details = data["choices"][0]["message"]["content"].strip()
+    except (KeyError, IndexError, TypeError):
+        logger.warning(f"Unexpected API response shape: {data}")
+        raise APIError("malformed API response")
 
     vessels = details.split('---')
     extracted_vessels = []
