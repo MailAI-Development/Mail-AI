@@ -29,6 +29,10 @@ _unlocode = load_unlocode_dict()
 for _k, _v in _unlocode.items():
     if _k not in csv_dict:
         csv_dict[_k] = _v
+    elif len(set(csv_dict[_k])) > 1 and len(set(_v)) == 1:
+        # WPI has conflicting zones for this name (homonym); defer to UN/LOCODE's
+        # authoritative country-derived single zone.
+        csv_dict[_k] = _v
 
 class ExtractWorker(QObject):
     new_email = Signal(dict)
@@ -42,17 +46,23 @@ class ExtractWorker(QObject):
         self.limit_reached = False
 
     def run(self):
-        for email in self.generator:
-            if not self.running:
-                break
-            if email.get("type") == "api_error":
-                self.api_error_key = email["error_key"]
-                break
-            if email.get("type") == "limit_reached":
-                self.limit_reached = True
-                break
-            self.new_email.emit(email)
-        self.done.emit()
+        try:
+            for email in self.generator:
+                if not self.running:
+                    break
+                if email.get("type") == "api_error":
+                    self.api_error_key = email["error_key"]
+                    break
+                if email.get("type") == "limit_reached":
+                    self.limit_reached = True
+                    break
+                self.new_email.emit(email)
+        except Exception as e:
+            import traceback
+            logger.error(f"Extraction worker crashed: {e}\n{traceback.format_exc()}")
+            self.api_error_key = "proxy_error_generic"
+        finally:
+            self.done.emit()
 
     def stop(self):
         self.running = False
@@ -1642,7 +1652,7 @@ class MainWindow(QMainWindow):
         upgrade_btn = QPushButton(t("upgrade_btn", self.language))
         upgrade_btn.setFixedSize(280, 60)
         upgrade_btn.setStyleSheet("font-weight: 600;")
-        upgrade_btn.clicked.connect(lambda: (QDesktopServices.openUrl(QUrl("https://ko-fi.com/mailai/membership")), dialog.accept()))
+        upgrade_btn.clicked.connect(lambda: (QDesktopServices.openUrl(QUrl("https://ko-fi.com/mailaiuk/tiers")), dialog.accept()))
 
         close_btn = QPushButton(t("donation_close", self.language))
         close_btn.setFixedSize(150, 60)
