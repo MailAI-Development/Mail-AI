@@ -802,10 +802,12 @@ class MainWindow(QMainWindow):
         if cfg.get("is_pro", False):
             status_text = t("pro_active", self.language)
             status_color = "#22d3ee"
-        else:
-            monthly = cfg.get("monthly_count", 0)
-            status_text = f"{t('no_license', self.language)}  ({monthly}/200 this month)"
+        elif trial_active():
+            status_text = f"{t('trial_active', self.language)} — {trial_days_left()} {t('trial_days_left', self.language)}"
             status_color = "#7ca4c0"
+        else:
+            status_text = t("trial_expired", self.language)
+            status_color = "#f87171"
 
         self.license_status_label = QLabel(status_text)
         self.license_status_label.setStyleSheet(f"font: 16px; color: {status_color};")
@@ -1333,7 +1335,7 @@ class MainWindow(QMainWindow):
             self.btn.setEnabled(True)
             return
 
-        if not is_pro_active() and load_config().get("monthly_count", 0) >= MONTHLY_LIMIT:
+        if not access_allowed():
             self.show_upgrade_dialog()
             self.btn.setEnabled(True)
             return
@@ -1622,7 +1624,7 @@ class MainWindow(QMainWindow):
                 self._restart_listening()
 
     def _restart_listening(self):
-        if not is_pro_active() and load_config().get("monthly_count", 0) >= MONTHLY_LIMIT:
+        if not access_allowed():
             self.show_upgrade_dialog()
             return
         self.handle_listen()
@@ -1897,7 +1899,7 @@ if __name__ == "__main__":
     load_existing_vessels()
     load_email_ids()
     config = load_config()
-    check_and_reset_monthly_count()
+    refresh_access_state()
     app = QApplication(sys.argv)
     app.setWindowIcon(QIcon(resource_path("icon.png")))
     window = MainWindow()

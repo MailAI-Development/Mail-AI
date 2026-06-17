@@ -17,6 +17,10 @@ import logging
 import hmac as _hmac
 import hashlib
 import base64
+try:
+    import winreg  # Windows-only; used to persist trial start outside the app folder
+except ImportError:
+    winreg = None
 
 logging.basicConfig(
     level=logging.INFO,
@@ -30,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 API_KEY = "REPLACE_BEFORE_BUILD"
 
-MONTHLY_LIMIT = 200
+TRIAL_DAYS = 7
 _LICENSE_SECRET = "REPLACE_BEFORE_BUILD"
 
 class APIError(Exception):
@@ -70,7 +74,7 @@ _email_ids_lock = threading.Lock()
 
 TRANSLATIONS = {
     "English": {
-        "welcome": "Welcome to the app",
+        "welcome": "Welcome to Mail AI",
         "extract_something": "Extract something",
         "extract": "Extract",
         "listen": "Listen for emails",
@@ -158,18 +162,20 @@ TRANSLATIONS = {
         "remove_zone_btn": "Remove",
         "no_custom_zones": "No custom zone mappings added yet.",
         "custom_zones_list": "Current custom mappings:",
-        "limit_reached_title": "Monthly limit reached",
-        "limit_reached_body": "You've reached your 200 email extraction limit for this month. Upgrade to Pro for unlimited extractions.",
+        "limit_reached_title": "Free trial ended",
+        "limit_reached_body": "Your 7-day free trial has ended. Upgrade to Pro for unlimited extractions — £9/month.",
         "upgrade_btn": "Upgrade to Pro — £9/month",
         "license_label": "License Key",
         "activate_btn": "Activate",
         "pro_active": "Pro active",
-        "no_license": "Free tier — 200 emails/month",
+        "trial_active": "Free trial",
+        "trial_days_left": "days left",
+        "trial_expired": "Trial expired — upgrade to continue",
         "invalid_key": "Invalid or expired key",
         "pro_section_header": "Pro License",
     },
     "中文": {
-        "welcome": "欢迎使用",
+        "welcome": "欢迎使用Mail AI",
         "extract_something": "提取数据",
         "extract": "提取",
         "listen": "监听邮件",
@@ -257,13 +263,15 @@ TRANSLATIONS = {
         "remove_zone_btn": "删除",
         "no_custom_zones": "尚未添加自定义区域映射。",
         "custom_zones_list": "当前自定义映射：",
-        "limit_reached_title": "每月额度已用完",
-        "limit_reached_body": "您本月的200封邮件提取额度已用完。升级到专业版可无限提取。",
+        "limit_reached_title": "免费试用已结束",
+        "limit_reached_body": "您的7天免费试用已结束。升级到专业版可无限提取 — £9/月。",
         "upgrade_btn": "升级到专业版 — £9/月",
         "license_label": "许可证密钥",
         "activate_btn": "激活",
         "pro_active": "专业版已激活",
-        "no_license": "免费版 — 每月200封",
+        "trial_active": "免费试用",
+        "trial_days_left": "天剩余",
+        "trial_expired": "试用已过期 — 请升级以继续",
         "invalid_key": "无效或已过期的密钥",
         "pro_section_header": "专业版许可证",
     }
@@ -847,7 +855,7 @@ def extract_details_from_email(preprocessed_body, csv_dict):
             f"1. MV (Motor Vessel): vessel name, sometimes prefixed with MV but may be numbered with no MV, never include DWT — e.g. MV OCEAN STAR\n"
             f"2. Deadweight (DWT): DWT in K to 2 significant figures — e.g. 70K, 58K. None if unknown\n"
             f"3. Build Year: 4-digit year the vessel was built — often written alongside DWT as DWT/YEAR e.g. 57K/2012 but may be elsewhere. None if unknown\n"
-            f"4. Vessel Open Location: the port or region where the vessel becomes available. Port name only in capitals, strip country and prefixes like OPEN/AT/IN/EX. May be marked with O/A or phrased as 'Open <location>', 'EX SHIPYARD <location>', or 'delivery <location>'. If only a region code is given (e.g. CJK, ECI, WCI, NOPAC), return that. None if unknown\n"
+            f"4. Vessel Open Location: the port or region where the vessel becomes available. Port name only in capitals, strip country and prefixes like OPEN/AT/IN/EX, strip suffixes like PORT. May be marked with O/A or phrased as 'Open <location>', 'EX SHIPYARD <location>', or 'delivery <location>'. If only a region code is given (e.g. CJK, ECI, WCI, NOPAC), return that. None if unknown\n"
             f"5. Vessel Open Date: the date the vessel becomes available. Date only, no year — e.g. 10 OCT, 20-22 NOV, EARLY OCT. May be phrased as open date, O/A, ARD, ETA, 'Expected time of delivery', or 'delivery date'. None if unknown\n"
             f"Format:\nMV: [MV name]\nDeadweight: [deadweight]\nBuild Year: [build year]\nVessel Open Location: [vessel open location]\nVessel Open Date: [vessel open date]\n"
             f"Repeat for each vessel mentioned in the email.\n"
@@ -872,7 +880,7 @@ def extract_details_from_email(preprocessed_body, csv_dict):
                 "https://api.openai.com/v1/chat/completions",
                 json=api_payload,
                 headers=headers,
-                timeout=60,
+                timeout=(10, 45),  # (connect, read) — bounds a stalled call instead of hanging
             )
             resp.raise_for_status()
             data = resp.json()
@@ -984,14 +992,77 @@ def save_email_ids():
 
 
 
-def check_and_reset_monthly_count():
+# Trial start is mirrored across three stores so deleting one (or reinstalling to a
+# new folder) does not reset the trial. The effective start is the EARLIEST seen anywhere.
+_TRIAL_REG_PATH = r"Software\MailAI"
+_TRIAL_APPDATA_FILE = os.path.join(
+    os.environ.get("LOCALAPPDATA") or os.path.expanduser("~"), "MailAI", "trial.dat"
+)
+
+def _read_reg_trial():
+    if winreg is None:
+        return None
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _TRIAL_REG_PATH) as k:
+            val, _ = winreg.QueryValueEx(k, "trial_start")
+            return val
+    except OSError:
+        return None
+
+def _write_reg_trial(date_str):
+    if winreg is None:
+        return
+    try:
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, _TRIAL_REG_PATH) as k:
+            winreg.SetValueEx(k, "trial_start", 0, winreg.REG_SZ, date_str)
+    except OSError:
+        pass
+
+def _read_appdata_trial():
+    try:
+        with open(_TRIAL_APPDATA_FILE, "r", encoding="utf-8") as f:
+            return f.read().strip()
+    except OSError:
+        return None
+
+def _write_appdata_trial(date_str):
+    try:
+        os.makedirs(os.path.dirname(_TRIAL_APPDATA_FILE), exist_ok=True)
+        with open(_TRIAL_APPDATA_FILE, "w", encoding="utf-8") as f:
+            f.write(date_str)
+    except OSError:
+        pass
+
+def _earliest_trial_start():
+    """Earliest valid trial-start date found across config.json, registry and appdata."""
+    starts = []
+    for v in (load_config().get("trial_start"), _read_reg_trial(), _read_appdata_trial()):
+        if v:
+            try:
+                starts.append(datetime.strptime(v, "%Y-%m-%d"))
+            except ValueError:
+                pass
+    return min(starts) if starts else None
+
+
+def refresh_access_state():
+    """Record the trial start on first run (to all three stores), keep them in sync to the
+    earliest known date, and revoke Pro if the stored key is invalid/expired. Idempotent and
+    cheap — safe to call at startup and on each polling cycle."""
     config = load_config()
-    current_month = datetime.now().strftime("%Y-%m")
     changed = False
-    if config.get("month_year", "") != current_month:
-        config["monthly_count"] = 0
-        config["month_year"] = current_month
+
+    earliest = _earliest_trial_start()
+    earliest_str = (earliest or datetime.now()).strftime("%Y-%m-%d")
+    # Propagate the earliest date to every store so removing one can't reset the trial.
+    if config.get("trial_start") != earliest_str:
+        config["trial_start"] = earliest_str
         changed = True
+    if _read_reg_trial() != earliest_str:
+        _write_reg_trial(earliest_str)
+    if _read_appdata_trial() != earliest_str:
+        _write_appdata_trial(earliest_str)
+
     stored_key = config.get("license_key", "")
     if config.get("is_pro", False) and not validate_license_key(stored_key):
         config["is_pro"] = False
@@ -1000,16 +1071,25 @@ def check_and_reset_monthly_count():
         save_config(config)
 
 
-def increment_monthly_count():
-    config = load_config()
-    count = config.get("monthly_count", 0) + 1
-    config["monthly_count"] = count
-    save_config(config)
-    return count
+def trial_days_left():
+    earliest = _earliest_trial_start()
+    if earliest is None:
+        return TRIAL_DAYS
+    elapsed = (datetime.now() - earliest).days
+    return max(0, TRIAL_DAYS - elapsed)
+
+
+def trial_active():
+    return trial_days_left() > 0
 
 
 def is_pro_active():
     return load_config().get("is_pro", False)
+
+
+def access_allowed():
+    """True if the user may extract — active Pro licence or an unexpired free trial."""
+    return is_pro_active() or trial_active()
 
 
 def validate_license_key(key: str) -> bool:
@@ -1303,79 +1383,115 @@ def process_email(email_address,folder,excel_path,csv_dict,worker):
         else:
             return
 
+        store_id = folder.StoreID
+        api_failures = 0  # consecutive API failures (circuit breaker for a real outage)
+
         while True:
             if not worker.running:
                 return
 
-            check_and_reset_monthly_count()
-            messages = folder.Items
-            messages.Sort("[ReceivedTime]", True)
-            message = messages.GetFirst()
+            refresh_access_state()
 
-            while message:
+            # Phase 1 — snapshot new (unseen) EntryIDs quickly, without holding the live
+            # enumerator across the slow per-email work below.
+            entry_ids = []
+            try:
+                messages = folder.Items
+                messages.Sort("[ReceivedTime]", True)
+                message = messages.GetFirst()
+                while message:
+                    if not worker.running:
+                        return
+                    if hasattr(message, 'ReceivedTime'):
+                        if message.ReceivedTime.replace(tzinfo=None) < start_time:
+                            break
+                        try:
+                            eid = message.EntryID
+                        except Exception:
+                            message = messages.GetNext()
+                            continue
+                        with _email_ids_lock:
+                            seen = eid in email_ids
+                        if not seen:
+                            entry_ids.append(eid)
+                    message = messages.GetNext()
+            except Exception as e:
+                logger.warning(f"Listen snapshot interrupted ({e})")
+
+            # Phase 2 — process each from a fresh item handle; one failure skips, not aborts.
+            for entry_id in reversed(entry_ids):  # oldest-first, matching arrival order
                 if not worker.running:
                     return
-
-                if hasattr(message, 'ReceivedTime'):
+                try:
+                    message = outlook.GetItemFromID(entry_id, store_id)
                     received_time = message.ReceivedTime
-                    if received_time.replace(tzinfo=None) < start_time:
-                        break
-
-                with _email_ids_lock:
-                    already_seen = message.EntryID in email_ids
-                if not already_seen and hasattr(message, 'ReceivedTime'):
                     email_body = message.Body
                     email_subject = message.Subject
                     sender_email = message.SenderEmailAddress
+                except Exception as e:
+                    logger.warning(f"Skipping email (fetch failed): {e}")
+                    continue  # don't mark seen — retry next cycle
 
+                with _email_ids_lock:
+                    email_ids.add(entry_id)
+                save_email_ids()
+
+                limit_hit = False
+                rows = []
+                excel_vessels = None
+                try:
                     if is_relevant_email(email_subject, email_body):
                         logger.info(f"Processing email from: {sender_email} with subject: {email_subject}")
                         preprocessed_body = get_first_n_lines(email_body)
-
-                        if preprocessed_body:
-                            cfg = load_config()
-                            if not cfg.get("is_pro", False) and cfg.get("monthly_count", 0) >= MONTHLY_LIMIT:
-                                yield {"type": "limit_reached"}
-                                return
-                            try:
+                        if not preprocessed_body:
+                            append_error_message(excel_path, sender_email, email_subject)
+                        else:
+                            if not access_allowed():
+                                limit_hit = True
+                            else:
                                 extracted_details = extract_details_from_email(preprocessed_body, csv_dict)
-                            except APIError:
-                                yield {"type": "api_error", "error_key": "proxy_error_generic"}
-                                return
-                            valid_vessels = filter_data(extracted_details)
-                            vessels = detect_duplicates(valid_vessels)
-
-                            if vessels:
-                                increment_monthly_count()
-                                for vessel in vessels:
-                                    vessel['Sender'] = sender_email
-                                    vessel['Subject'] = email_subject
-                                    vessel['Received Time'] = format_received_time(received_time)
-                                ves = len(vessels)
-                                for vessel in vessels:
-                                    yield {
+                                api_failures = 0  # a call succeeded → reset breaker
+                                valid_vessels = filter_data(extracted_details)
+                                vessels = detect_duplicates(valid_vessels)
+                                if vessels:
+                                    for vessel in vessels:
+                                        vessel['Sender'] = sender_email
+                                        vessel['Subject'] = email_subject
+                                        vessel['Received Time'] = format_received_time(received_time)
+                                    ves = len(vessels)
+                                    rows = [{
                                         "sender": sender_email,
                                         "subject": email_subject,
                                         "received_time": format_received_time(received_time),
                                         "ves": ves,
                                         "vessel_data": vessel,
-                                    }
-                                if is_excel_open(excel_path):
-                                    yield {"type": "excel_locked"}
-                                    while is_excel_open(excel_path):
-                                        if not worker.running:
-                                            return
-                                        time.sleep(2)
-                                    yield {"type": "excel_unlocked"}
-                                append_data_excel(excel_path, vessels, None, False)
-                        else:
-                            append_error_message(excel_path, sender_email, email_subject)
+                                    } for vessel in vessels]
+                                    excel_vessels = vessels
+                except APIError as e:
+                    api_failures += 1
+                    logger.warning(f"API failed for this email; skipping (consecutive={api_failures}): {e}")
+                    if api_failures >= 5:
+                        yield {"type": "api_error", "error_key": "proxy_error_generic"}
+                        return
+                    continue
+                except Exception as e:
+                    logger.warning(f"Skipping email (processing failed): {e}")
+                    continue
 
-                    with _email_ids_lock:
-                        email_ids.add(message.EntryID)
-                    save_email_ids()
-
-                message = messages.GetNext()
+                if limit_hit:
+                    yield {"type": "limit_reached"}
+                    return
+                for row in rows:
+                    yield row
+                if excel_vessels:
+                    if is_excel_open(excel_path):
+                        yield {"type": "excel_locked"}
+                        while is_excel_open(excel_path):
+                            if not worker.running:
+                                return
+                            time.sleep(2)
+                        yield {"type": "excel_unlocked"}
+                    append_data_excel(excel_path, excel_vessels, None, False)
 
             for _ in range(10):
                 if not worker.running:
@@ -1405,72 +1521,115 @@ def night_extraction(specific_datetime, email_address, folder, excel_path, csv_d
         else:
             return
 
-        messages = folder.Items
-        messages.Sort("[ReceivedTime]", True)
-        message = messages.GetFirst()
-        check_and_reset_monthly_count()
+        store_id = folder.StoreID
+        refresh_access_state()
 
+        # Phase 1 — snapshot relevant EntryIDs quickly (no API calls; minimal time holding
+        # the live COM enumerator, so incoming mail / a dropped connection can't break us
+        # mid-run the way iterating across slow OpenAI calls did).
+        entry_ids = []
+        try:
+            messages = folder.Items
+            messages.Sort("[ReceivedTime]", True)
+            message = messages.GetFirst()
+            while message:
+                if not worker.running:
+                    return
+                if hasattr(message, 'ReceivedTime'):
+                    received_time = message.ReceivedTime
+                    if received_time.replace(tzinfo=None) <= specific_datetime.replace(tzinfo=None):
+                        break
+                    try:
+                        entry_ids.append(message.EntryID)
+                    except Exception:
+                        pass
+                message = messages.GetNext()
+        except Exception as e:
+            logger.warning(f"Snapshot interrupted ({e}); proceeding with {len(entry_ids)} emails collected")
+
+        # Phase 2 — process each from a fresh item handle. A failure on one email skips it
+        # rather than aborting the whole run.
         processed_emails = []
         ves = 0
-
-        while message:
+        api_failures = 0  # consecutive API failures (circuit breaker for a real outage)
+        for entry_id in entry_ids:
             if not worker.running:
                 return
-            if hasattr(message, 'ReceivedTime'):
+
+            limit_hit = False
+            rows = []
+            try:
+                message = outlook.GetItemFromID(entry_id, store_id)
                 received_time = message.ReceivedTime
+                email_body = message.Body
+                email_subject = message.Subject
+                sender_email = message.SenderEmailAddress
 
-                if received_time.replace(tzinfo=None) <= specific_datetime.replace(tzinfo=None):
-                    break
-                if received_time.replace(tzinfo=None) > specific_datetime.replace(tzinfo=None):
-                    email_body = message.Body
-                    email_subject = message.Subject
-                    sender_email = message.SenderEmailAddress
+                if not is_relevant_email(email_subject, email_body):
+                    continue
 
-                    if is_relevant_email(email_subject, email_body):
-                        logger.info(f"Processing email from: {sender_email} with subject: {email_subject}")
-                        preprocessed_body = get_first_n_lines(email_body)
-                        if preprocessed_body:
-                            cfg = load_config()
-                            if not cfg.get("is_pro", False) and cfg.get("monthly_count", 0) >= MONTHLY_LIMIT:
-                                yield {"type": "limit_reached"}
-                                return
-                            try:
-                                extracted_details = extract_details_from_email(preprocessed_body, csv_dict)
-                            except APIError:
-                                yield {"type": "api_error", "error_key": "proxy_error_generic"}
-                                return
-                            valid_vessels = filter_data(extracted_details)
-                            vessels = detect_duplicates(valid_vessels)
+                logger.info(f"Processing email from: {sender_email} with subject: {email_subject}")
+                preprocessed_body = get_first_n_lines(email_body)
+                if not preprocessed_body:
+                    append_error_message(excel_path, sender_email, email_subject)
+                    continue
 
-                            if vessels:
-                                increment_monthly_count()
-                                for vessel in vessels:
-                                    vessel['Sender'] = sender_email
-                                    vessel['Subject'] = email_subject
-                                    vessel['Received Time'] = format_received_time(received_time)
-                                processed_emails.extend(vessels)
-                                ves += len(vessels)
+                if not access_allowed():
+                    limit_hit = True
+                else:
+                    extracted_details = extract_details_from_email(preprocessed_body, csv_dict)
+                    api_failures = 0  # a call succeeded → reset breaker
+                    valid_vessels = filter_data(extracted_details)
+                    vessels = detect_duplicates(valid_vessels)
+                    if vessels:
+                        for vessel in vessels:
+                            vessel['Sender'] = sender_email
+                            vessel['Subject'] = email_subject
+                            vessel['Received Time'] = format_received_time(received_time)
+                        processed_emails.extend(vessels)
+                        ves += len(vessels)
+                        rows = [{
+                            "sender": sender_email,
+                            "subject": email_subject,
+                            "received_time": format_received_time(received_time),
+                            "ves": ves,
+                            "vessel_data": vessel,
+                        } for vessel in vessels]
+            except APIError as e:
+                api_failures += 1
+                logger.warning(f"API failed for this email; skipping (consecutive={api_failures}): {e}")
+                if api_failures >= 5:
+                    yield {"type": "api_error", "error_key": "proxy_error_generic"}
+                    return
+                continue
+            except Exception as e:
+                logger.warning(f"Skipping email (processing failed): {e}")
+                continue
 
-                                for vessel in vessels:
-                                    yield {
-                                        "sender": sender_email,
-                                        "subject": email_subject,
-                                        "received_time": format_received_time(received_time),
-                                        "ves": ves,
-                                        "vessel_data": vessel,
-                                    }
-                        else:
-                            append_error_message(excel_path, sender_email, email_subject)
-
-            message = messages.GetNext()
+            if limit_hit:
+                yield {"type": "limit_reached"}
+                return
+            for row in rows:
+                yield row
 
         if processed_emails:
             if is_excel_open(excel_path):
+                logger.warning("Output Excel file is locked (open in Excel / syncing) — waiting to write results")
                 yield {"type": "excel_locked"}
+                waited = 0
                 while is_excel_open(excel_path):
+                    if not worker.running:
+                        return
                     time.sleep(2)
+                    waited += 2
+                    if waited >= 300:  # give up after ~5 min rather than hang forever
+                        logger.error("Excel file still locked after 5 min — aborting write")
+                        yield {"type": "api_error", "error_key": "proxy_error_generic"}
+                        return
                 yield {"type": "excel_unlocked"}
+            logger.info(f"Writing {len(processed_emails)} vessels to Excel")
             append_data_excel(excel_path, processed_emails, specific_datetime, True)
+            logger.info("Extraction complete — results written to Excel")
             return True
         else:
             return False
