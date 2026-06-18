@@ -37,6 +37,10 @@ API_KEY = "REPLACE_BEFORE_BUILD"
 TRIAL_DAYS = 7
 _LICENSE_SECRET = "REPLACE_BEFORE_BUILD"
 
+APP_VERSION = "1.3"
+GITHUB_REPO = "MailAI-Development/Mail-AI"
+UPDATE_DOWNLOAD_URL = f"https://github.com/{GITHUB_REPO}/releases/latest/download/Mail.AI.exe"
+
 class APIError(Exception):
     pass
 
@@ -152,7 +156,7 @@ TRANSLATIONS = {
         "setup_back": "Back",
         "setup_step": "Step",
         "custom_zones_header": "Custom Zone Mappings",
-        "custom_zones_desc": "Add your own port-to-zone mappings to supplement the built-in WPI database:",
+        "custom_zones_desc": "Add your own port-to-zone mappings:",
         "port_name_label": "Port Name:",
         "zone_label": "Zone:",
         "add_zone_btn": "Add Mapping",

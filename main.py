@@ -3,7 +3,7 @@ import pythoncom
 from PySide6.QtWidgets import (
     QApplication, QWidget, QMainWindow, QVBoxLayout, QHBoxLayout, QSystemTrayIcon, QMenu,
     QPushButton, QLabel, QFrame, QStackedWidget, QLineEdit, QScrollArea, QGridLayout, QComboBox,
-    QFileDialog, QDialog, QMessageBox
+    QFileDialog, QDialog, QMessageBox, QSizePolicy
 )
 from PySide6.QtGui import QFontDatabase, QFont, QColor, QPalette, QIcon, QDesktopServices
 from PySide6.QtCore import Qt, QObject, Signal, Slot, QThread, QTimer, QUrl
@@ -96,11 +96,11 @@ class GridWidget(QWidget):
         painter = QPainter(self)
 
         if self.theme == "dark":
-            painter.fillRect(self.rect(), QColor("#080f1a"))
-            pen = QPen(QColor("#0b1a2e"))
+            painter.fillRect(self.rect(), QColor("#0a0b0d"))
+            pen = QPen(QColor("#141517"))
         else:
-            painter.fillRect(self.rect(), QColor("#f0f9ff"))
-            pen = QPen(QColor("#bae6fd"))
+            painter.fillRect(self.rect(), QColor("#fafafa"))
+            pen = QPen(QColor("#f0f0f1"))
 
         pen.setWidth(1)
         painter.setPen(pen)
@@ -125,11 +125,11 @@ class GridStack(QStackedWidget):
         painter = QPainter(self)
 
         if self.theme == "dark":
-            painter.fillRect(self.rect(), QColor("#080f1a"))
-            pen = QPen(QColor("#0b1a2e"))
+            painter.fillRect(self.rect(), QColor("#0a0b0d"))
+            pen = QPen(QColor("#141517"))
         else:
-            painter.fillRect(self.rect(), QColor("#f0f9ff"))
-            pen = QPen(QColor("#bae6fd"))
+            painter.fillRect(self.rect(), QColor("#fafafa"))
+            pen = QPen(QColor("#f0f0f1"))
 
         pen.setWidth(1)
         painter.setPen(pen)
@@ -157,10 +157,10 @@ class SetupWizard(QWidget):
         wl = QVBoxLayout(welcome)
         wl.setAlignment(Qt.AlignCenter)
         wt = QLabel(t("setup_welcome_title", self.language))
-        wt.setStyleSheet("font: bold 55px;")
+        wt.setStyleSheet("font: bold 44px;")
         wt.setAlignment(Qt.AlignCenter)
         ws = QLabel(t("setup_welcome_subtitle", self.language))
-        ws.setStyleSheet("font: normal 22px;")
+        ws.setStyleSheet("font: normal 18px;")
         ws.setAlignment(Qt.AlignCenter)
 
         lang_row = QHBoxLayout()
@@ -198,10 +198,10 @@ class SetupWizard(QWidget):
         self.email_step.setStyleSheet("font: 600 14px; color: #0891b2;")
         self.email_step.setAlignment(Qt.AlignCenter)
         et = QLabel(t("setup_email_title", self.language))
-        et.setStyleSheet("font: bold 40px;")
+        et.setStyleSheet("font: bold 32px;")
         et.setAlignment(Qt.AlignCenter)
         ed = QLabel(t("setup_email_desc", self.language))
-        ed.setStyleSheet("font: normal 18px;")
+        ed.setStyleSheet("font: normal 17px;")
         ed.setAlignment(Qt.AlignCenter)
         self.email_input = QLineEdit()
         self.email_input.setPlaceholderText("e.g. johndoe@gmail.com")
@@ -227,10 +227,10 @@ class SetupWizard(QWidget):
         self.folder_step.setStyleSheet("font: 600 14px; color: #0891b2;")
         self.folder_step.setAlignment(Qt.AlignCenter)
         ft = QLabel(t("setup_folder_title", self.language))
-        ft.setStyleSheet("font: bold 40px;")
+        ft.setStyleSheet("font: bold 32px;")
         ft.setAlignment(Qt.AlignCenter)
         fd = QLabel(t("setup_folder_desc", self.language))
-        fd.setStyleSheet("font: normal 18px;")
+        fd.setStyleSheet("font: normal 17px;")
         fd.setAlignment(Qt.AlignCenter)
         self.folder_input = QLineEdit()
         self.folder_input.setPlaceholderText("e.g. Inbox, shipbroking")
@@ -256,10 +256,10 @@ class SetupWizard(QWidget):
         self.excel_step.setStyleSheet("font: 600 14px; color: #0891b2;")
         self.excel_step.setAlignment(Qt.AlignCenter)
         xt = QLabel(t("setup_excel_title", self.language))
-        xt.setStyleSheet("font: bold 40px;")
+        xt.setStyleSheet("font: bold 32px;")
         xt.setAlignment(Qt.AlignCenter)
         xd = QLabel(t("setup_excel_desc", self.language))
-        xd.setStyleSheet("font: normal 18px;")
+        xd.setStyleSheet("font: normal 17px;")
         xd.setAlignment(Qt.AlignCenter)
         excel_row = QHBoxLayout()
         excel_row.setAlignment(Qt.AlignCenter)
@@ -273,7 +273,7 @@ class SetupWizard(QWidget):
         browse_btn = QPushButton(t("setup_excel_browse", self.language))
         browse_btn.setFixedSize(100, 45)
         browse_btn.clicked.connect(self.browse_excel)
-        browse_btn.setStyleSheet("font: normal 16px;")
+        browse_btn.setStyleSheet("font: normal 18px;")
         excel_row.addWidget(self.excel_input)
         excel_row.addSpacing(5)
         excel_row.addWidget(browse_btn)
@@ -291,10 +291,10 @@ class SetupWizard(QWidget):
         fnl = QVBoxLayout(finish)
         fnl.setAlignment(Qt.AlignCenter)
         fnt = QLabel(t("setup_finish_title", self.language))
-        fnt.setStyleSheet("font: bold 55px;")
+        fnt.setStyleSheet("font: bold 44px;")
         fnt.setAlignment(Qt.AlignCenter)
         fnd = QLabel(t("setup_finish_desc", self.language))
-        fnd.setStyleSheet("font: normal 20px;")
+        fnd.setStyleSheet("font: normal 17px;")
         fnd.setAlignment(Qt.AlignCenter)
         fnd.setWordWrap(True)
         fnd.setMaximumWidth(700)
@@ -318,7 +318,7 @@ class SetupWizard(QWidget):
         self.back_btn = QPushButton(t("setup_back", self.language))
         self.back_btn.setFixedSize(120, 50)
         self.back_btn.clicked.connect(self.go_back)
-        self.back_btn.setStyleSheet("font: normal 20px;")
+        self.back_btn.setStyleSheet("font: normal 17px;")
 
         self.dots = []
         dots_layout = QHBoxLayout()
@@ -333,7 +333,7 @@ class SetupWizard(QWidget):
         self.next_btn = QPushButton(t("setup_next", self.language))
         self.next_btn.setFixedSize(120, 50)
         self.next_btn.clicked.connect(self.go_next)
-        self.next_btn.setStyleSheet("font: normal 20px;")
+        self.next_btn.setStyleSheet("font: normal 17px;")
 
         nav.addWidget(self.back_btn)
         nav.addStretch()
@@ -411,7 +411,8 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Mail AI")
-        self.setFixedSize(1280, 800)
+        self.setMinimumSize(1000, 680)
+        self.resize(1320, 860)
         self.setWindowIcon(QIcon(resource_path("icon.png")))
 
 
@@ -505,9 +506,12 @@ class MainWindow(QMainWindow):
             """)
             self.sidebar_layout.addWidget(btn)
 
+        self._active_sidebar_btn = None
         self.extract_sidebar_btn.clicked.connect(self.on_extract_sidebar_clicked)
-        self.filtering_sidebar_btn.clicked.connect(lambda: self.switch_page(self.page_filtering))
-        self.settings_sidebar_btn.clicked.connect(lambda: self.switch_page(self.page_settings))
+        self.filtering_sidebar_btn.clicked.connect(
+            lambda: (self._set_active_sidebar(self.filtering_sidebar_btn), self.switch_page(self.page_filtering)))
+        self.settings_sidebar_btn.clicked.connect(
+            lambda: (self._set_active_sidebar(self.settings_sidebar_btn), self.switch_page(self.page_settings)))
 
         self.sidebar_layout.addStretch()
 
@@ -516,9 +520,9 @@ class MainWindow(QMainWindow):
         ver.setStyleSheet("""
             font-family: 'DM Mono';
             font-size: 11px;
-            color: #3a5a78;
+            color: #5c5d66;
             background-color: transparent;
-            border-top: 1px solid #1a3a5c;
+            border-top: 1px solid #26272b;
             padding-left: 16px;
         """)
         self.sidebar_layout.addWidget(ver)
@@ -587,23 +591,23 @@ class MainWindow(QMainWindow):
         content_layout.setAlignment(Qt.AlignCenter)
 
         header = QLabel(t("welcome", self.language))
-        header.setStyleSheet("font: bold 75px;")
+        header.setStyleSheet("font: bold 68px;")
         header.setAlignment(Qt.AlignCenter)
 
 
         caption = QLabel(t("extract_something", self.language))
-        caption.setStyleSheet("font: normal 30px;")
+        caption.setStyleSheet("font: normal 22px;")
         caption.setAlignment(Qt.AlignCenter)
 
         button_row = QHBoxLayout()
         button_row.setSpacing(30)
 
         btn_left = QPushButton(t("extract", self.language))
-        btn_left.setStyleSheet("font-weight: 600;")
+        btn_left.setProperty("variant", "primary")
         btn_left.clicked.connect(self.show_extract_page)
 
         btn_right = QPushButton(t("listen", self.language))
-        btn_right.setStyleSheet("font-weight: 600;")
+        btn_right.setProperty("variant", "primary")
         btn_right.clicked.connect(self.show_listening_page)
 
         btn_left.setFixedSize(250, 80)
@@ -627,10 +631,10 @@ class MainWindow(QMainWindow):
         content_layout.setAlignment(Qt.AlignTop | Qt.AlignLeft)
 
         header = QLabel(t("filtering_settings", self.language))
-        header.setStyleSheet("font: bold 50px;")
+        header.setStyleSheet("font: bold 40px;")
 
         caption = QLabel(t("email_caption", self.language))
-        caption.setStyleSheet("font: 600 20px;")
+        caption.setStyleSheet("font: 600 17px;")
         input_box = QLineEdit()
         input_box.setMaxLength(254)
         input_box.setPlaceholderText("e.g. johndoe@gmail.com")
@@ -640,7 +644,7 @@ class MainWindow(QMainWindow):
         input_box.textEdited.connect(self.email_entered)
 
         caption2 = QLabel(t("folder_caption", self.language))
-        caption2.setStyleSheet("font: 600 20px;")
+        caption2.setStyleSheet("font: 600 17px;")
         input_box2 = QLineEdit()
         input_box2.setMaxLength(254)
         input_box2.setPlaceholderText("e.g. Inbox, Archive")
@@ -650,7 +654,7 @@ class MainWindow(QMainWindow):
         input_box2.textEdited.connect(self.folder_entered)
 
         caption3 = QLabel(t("excel_caption", self.language))
-        caption3.setStyleSheet("font: 600 20px;")
+        caption3.setStyleSheet("font: 600 17px;")
         input_box3 = QLineEdit()
         input_box3.setMaxLength(254)
         input_box3.setPlaceholderText("e.g. extraction.xlsx")
@@ -660,7 +664,7 @@ class MainWindow(QMainWindow):
         input_box3.textEdited.connect(self.excel_entered)
 
         caption4 = QLabel(t("clear_duplicates_caption", self.language))
-        caption4.setStyleSheet("font: 600 20px;")
+        caption4.setStyleSheet("font: 600 17px;")
         self.refresh_btn = QPushButton(t("clear_duplicates_btn", self.language))
         self.refresh_btn.setStyleSheet("font-weight: 600;")
         self.refresh_btn.setFixedSize(250, 80)
@@ -696,10 +700,10 @@ class MainWindow(QMainWindow):
         content_layout.setAlignment(Qt.AlignTop | Qt.AlignLeft)
 
         header = QLabel(t("settings", self.language))
-        header.setStyleSheet("font: bold 50px;")
+        header.setStyleSheet("font: bold 40px;")
 
         theme_label = QLabel(t("theme", self.language))
-        theme_label.setStyleSheet("font: 600 20px;")
+        theme_label.setStyleSheet("font: 600 17px;")
 
         if load_config().get("theme", "dark") == "dark":
             self.theme_btn = QPushButton(t("switch_light", self.language))
@@ -707,11 +711,11 @@ class MainWindow(QMainWindow):
             self.theme_btn = QPushButton(t("switch_dark", self.language))
             
         self.theme_btn.setFixedSize(250, 80)
-        self.theme_btn.setStyleSheet("font: 600 18px;")
+        self.theme_btn.setStyleSheet("font: 600 17px;")
         self.theme_btn.clicked.connect(self.toggle_theme)
 
         language_label = QLabel(t("language", self.language))
-        language_label.setStyleSheet("font: 600 20px;")
+        language_label.setStyleSheet("font: 600 17px;")
 
         self.language_combo = QComboBox()
         self.language_combo.addItems(["English", "中文"])
@@ -735,7 +739,7 @@ class MainWindow(QMainWindow):
 
         # Custom zone mappings section
         zones_header = QLabel(t("custom_zones_header", self.language))
-        zones_header.setStyleSheet("font: bold 30px;")
+        zones_header.setStyleSheet("font: bold 26px;")
         content_layout.addWidget(zones_header)
 
         zones_desc = QLabel(t("custom_zones_desc", self.language))
@@ -783,7 +787,7 @@ class MainWindow(QMainWindow):
 
         # List of current custom mappings
         zones_list_label = QLabel(t("custom_zones_list", self.language))
-        zones_list_label.setStyleSheet("font: 600 18px;")
+        zones_list_label.setStyleSheet("font: 600 17px;")
         content_layout.addWidget(zones_list_label)
         content_layout.addSpacing(5)
 
@@ -794,7 +798,7 @@ class MainWindow(QMainWindow):
         content_layout.addSpacing(40)
 
         license_header = QLabel(t("pro_section_header", self.language))
-        license_header.setStyleSheet("font: bold 30px;")
+        license_header.setStyleSheet("font: bold 26px;")
         content_layout.addWidget(license_header)
         content_layout.addSpacing(10)
 
@@ -826,7 +830,7 @@ class MainWindow(QMainWindow):
 
         self.activate_btn = QPushButton(t("activate_btn", self.language))
         self.activate_btn.setFixedSize(140, 40)
-        self.activate_btn.setStyleSheet("font-weight: 600;")
+        self.activate_btn.setProperty("variant", "primary")
         self.activate_btn.clicked.connect(self.activate_license)
 
         key_row.addWidget(license_label_w)
@@ -844,7 +848,7 @@ class MainWindow(QMainWindow):
 
         upgrade_btn = QPushButton(t("upgrade_btn", self.language))
         upgrade_btn.setFixedSize(340, 50)
-        upgrade_btn.setStyleSheet("font-weight: 600;")
+        upgrade_btn.setProperty("variant", "primary")
         upgrade_btn.clicked.connect(lambda: QDesktopServices.openUrl(QUrl("https://ko-fi.com/mailaiuk/tiers")))
         content_layout.addWidget(upgrade_btn)
         content_layout.addSpacing(20)
@@ -920,7 +924,7 @@ class MainWindow(QMainWindow):
         content_layout.setAlignment(Qt.AlignTop | Qt.AlignLeft)
 
         header = QLabel(t("extract_page_header", self.language))
-        header.setStyleSheet("font: bold 50px;")
+        header.setStyleSheet("font: bold 40px;")
 
         self.caption = QLabel("")
         self.caption2 = QLabel("")
@@ -933,7 +937,7 @@ class MainWindow(QMainWindow):
         input_row.setAlignment(Qt.AlignLeft)
 
         caption5 = QLabel(t("date_caption", self.language))
-        caption5.setStyleSheet("font: 600 20px;")
+        caption5.setStyleSheet("font: 600 17px;")
 
         self.input_day = QLineEdit()
         self.input_day.setPlaceholderText("Day")
@@ -966,7 +970,7 @@ class MainWindow(QMainWindow):
         caption6 = QLabel(t("time_caption", self.language))
         caption6.setWordWrap(True)
         caption6.setMaximumWidth(1000)
-        caption6.setStyleSheet("font: 600 20px;")
+        caption6.setStyleSheet("font: 600 17px;")
 
         self.input_hour = QLineEdit()
         self.input_hour.setPlaceholderText("Hour")
@@ -994,15 +998,7 @@ class MainWindow(QMainWindow):
         input_row2.addWidget(self.input_ampm)
 
         self.btn = QPushButton(t("start_extracting", self.language))
-        self.btn.setStyleSheet("""
-        QPushButton { font-weight: 600; }
-        QToolTip {
-            background-color: #333;
-            color: white;
-            padding: 6px;
-            font-size: 15px;
-        }
-        """)
+        self.btn.setProperty("variant", "primary")
         self.btn.setFixedSize(200, 80)
         self.btn.clicked.connect(self.handle_extract)
         self.btn.setEnabled(False)
@@ -1033,22 +1029,48 @@ class MainWindow(QMainWindow):
 
         return content
 
+    def _header_style(self):
+        c = getattr(self, "_theme_colors", {})
+        muted = c.get("muted", "#9b9ba3"); border = c.get("border", "#26272b")
+        return (f"font-family:'DM Mono'; font-size:13px; font-weight:600; "
+                f"letter-spacing:1px; color:{muted}; padding:10px 12px; "
+                f"border-bottom:1px solid {border};")
+
+    def _cell_style(self, col, row_index):
+        c = getattr(self, "_theme_colors", {})
+        text = c.get("text", "#f4f4f5"); accent = c.get("accent", "#22d3ee")
+        surface = c.get("surface", "#141517"); border = c.get("border", "#26272b")
+        row_bg = surface if (row_index % 2 == 1) else "transparent"
+        base = f"padding:10px 12px; background:{row_bg}; border-bottom:1px solid {border};"
+        if col == 7:  # Zone — accent, monospace
+            return f"font-family:'DM Mono'; font-size:15px; font-weight:600; color:{accent}; {base}"
+        if col == 4:  # DWT/Built — monospace, right-aligned (set in loop)
+            return f"font-family:'DM Mono'; font-size:15px; color:{text}; {base}"
+        return f"font-size:16px; color:{text}; {base}"
+
+    def _status_box_qss(self, accent_hex):
+        c = getattr(self, "_theme_colors", {})
+        surface = c.get("surface", "#141517"); border = c.get("border", "#26272b")
+        return (f"background-color:{surface}; border:1px solid {border}; "
+                f"border-left:3px solid {accent_hex}; border-radius:8px; margin-left:-10px;")
+
     def create_main_page(self):
         content = QWidget()
         content_layout = QVBoxLayout(content)
-        content_layout.setAlignment(Qt.AlignTop | Qt.AlignLeft)
+        content_layout.setContentsMargins(24, 24, 24, 24)
+        content_layout.setSpacing(8)
 
         self.extheader = QLabel(t("current_extraction", self.language))
-        self.extheader.setStyleSheet("font: bold 50px;")
+        self.extheader.setStyleSheet("font: bold 40px;")
 
         self.extbox = QFrame()
         self.extbox.setWindowFlags(Qt.FramelessWindowHint)
         self.extbox.setAttribute(Qt.WA_TranslucentBackground)
         self.extbox.setFixedSize(600, 70)
-        self.extbox.setStyleSheet("background-color: rgba(0, 255, 0, 100); margin-left: -10px;")
+        self.extbox.setStyleSheet(self._status_box_qss("#34d399"))
 
         self.status = QLabel(t("extraction_running", self.language))
-        self.status.setStyleSheet("font: 600 20px; padding: 15px;")
+        self.status.setStyleSheet("font: 600 17px; padding: 15px;")
 
         box_layout = QVBoxLayout(self.extbox)
         box_layout.addWidget(self.status)
@@ -1065,10 +1087,11 @@ class MainWindow(QMainWindow):
         self.new_extract_btn.hide()
 
         self.caption5 = QLabel("")
-        self.caption5.setStyleSheet("font: 600 20px;")
+        self.caption5.setStyleSheet("font: 600 17px;")
 
         self.scrollf = QScrollArea()
-        self.scrollf.setFixedSize(1000, 500)
+        self.scrollf.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.scrollf.setMinimumSize(560, 280)
         self.scrollf.setWidgetResizable(True)
         self.scrollf.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
         self.scrollf.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
@@ -1095,8 +1118,8 @@ class MainWindow(QMainWindow):
         ]
 
         for i, text in enumerate(headers):
-            h = QLabel(text)
-            h.setStyleSheet("font-weight: 600; font-size: 20px;")
+            h = QLabel(text.upper())
+            h.setStyleSheet(self._header_style())
             h.setFixedWidth(self.col_widths[i])
             self.grid.addWidget(h, 0, i)
 
@@ -1121,32 +1144,33 @@ class MainWindow(QMainWindow):
         btn_row.addWidget(self.continue_listen_btn)
         btn_row.addWidget(self.open_excel_btn)
 
-        content_layout.addWidget(self.extheader)
+        content_layout.addWidget(self.extheader, alignment=Qt.AlignLeft)
         content_layout.addSpacing(5)
-        content_layout.addWidget(self.extbox)
+        content_layout.addWidget(self.extbox, alignment=Qt.AlignLeft)
         content_layout.addSpacing(5)
         content_layout.addLayout(btn_row)
-        content_layout.addWidget(self.caption5)
-        content_layout.addWidget(self.scrollf)
+        content_layout.addWidget(self.caption5, alignment=Qt.AlignLeft)
+        content_layout.addWidget(self.scrollf, 1)
 
         return content
 
     def create_listening_page(self):
         content = QWidget()
         content_layout = QVBoxLayout(content)
-        content_layout.setAlignment(Qt.AlignTop | Qt.AlignLeft)
+        content_layout.setContentsMargins(24, 24, 24, 24)
+        content_layout.setSpacing(8)
 
         self.lheader = QLabel(t("listening_header", self.language))
-        self.lheader.setStyleSheet("font: bold 50px;")
+        self.lheader.setStyleSheet("font: bold 40px;")
 
         self.lbox = QFrame()
         self.lbox.setWindowFlags(Qt.FramelessWindowHint)
         self.lbox.setAttribute(Qt.WA_TranslucentBackground)
         self.lbox.setFixedSize(600, 70)
-        self.lbox.setStyleSheet("background-color: rgba(255, 165, 0, 100); margin-left: -10px;")
+        self.lbox.setStyleSheet(self._status_box_qss("#f59e0b"))
 
         self.statusl = QLabel(t("listening_paused", self.language))
-        self.statusl.setStyleSheet("font: 600 20px; padding: 15px;")
+        self.statusl.setStyleSheet("font: 600 17px; padding: 15px;")
 
         lbox_layout = QVBoxLayout(self.lbox)  # use lbox not extbox
         lbox_layout.addWidget(self.statusl)   # use statusl not status
@@ -1156,10 +1180,11 @@ class MainWindow(QMainWindow):
         self.listen_toggle_btn.setFixedSize(250, 80)
 
         self.lcount = QLabel("")
-        self.lcount.setStyleSheet("font: 600 20px;")
+        self.lcount.setStyleSheet("font: 600 17px;")
 
         self.lscrollf = QScrollArea()         # separate scroll area from extraction page
-        self.lscrollf.setFixedSize(1000, 500)
+        self.lscrollf.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.lscrollf.setMinimumSize(560, 280)
         self.lscrollf.setWidgetResizable(True)
         self.lscrollf.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
         self.lscrollf.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
@@ -1183,25 +1208,32 @@ class MainWindow(QMainWindow):
         ]
 
         for i, text in enumerate(headers):
-            h = QLabel(text)
-            h.setStyleSheet("font-weight: 600; font-size: 20px;")
+            h = QLabel(text.upper())
+            h.setStyleSheet(self._header_style())
             h.setFixedWidth(self.col_widths[i])
             self.lgrid.addWidget(h, 0, i)
 
         self.lscrollf.setWidget(self.lcontainer)
 
-        content_layout.addWidget(self.lheader)    # use lheader
+        content_layout.addWidget(self.lheader, alignment=Qt.AlignLeft)
         content_layout.addSpacing(5)
-        content_layout.addWidget(self.lbox)       # use lbox
+        content_layout.addWidget(self.lbox, alignment=Qt.AlignLeft)
         content_layout.addSpacing(5)
-        content_layout.addWidget(self.listen_toggle_btn)
-        content_layout.addWidget(self.lcount)
-        content_layout.addWidget(self.lscrollf)   # use lscrollf
-
+        content_layout.addWidget(self.listen_toggle_btn, alignment=Qt.AlignLeft)
+        content_layout.addWidget(self.lcount, alignment=Qt.AlignLeft)
+        content_layout.addWidget(self.lscrollf, 1)
         return content
 
 
+    def _set_active_sidebar(self, btn):
+        self._active_sidebar_btn = btn
+        base = getattr(self, "_sidebar_btn_qss", "")
+        active = getattr(self, "_sidebar_btn_active_qss", "")
+        for b in (self.extract_sidebar_btn, self.filtering_sidebar_btn, self.settings_sidebar_btn):
+            b.setStyleSheet(active if b is btn else base)
+
     def on_extract_sidebar_clicked(self):
+        self._set_active_sidebar(self.extract_sidebar_btn)
         if self.page_main is not None:
             self.switch_page(self.page_main)
         else:
@@ -1227,35 +1259,35 @@ class MainWindow(QMainWindow):
 
         if getattr(self, "email_address", ""):
             self.caption.setText(t("email_extracting", self.language))
-            self.caption.setStyleSheet("font: 600 20px;")
+            self.caption.setStyleSheet("font: 600 17px;")
             self.caption2.setText(self.email_address)
-            self.caption2.setStyleSheet("font: normal 20px;")
+            self.caption2.setStyleSheet("font: normal 17px;")
         else:
             self.caption.setText(t("no_email", self.language))
-            self.caption.setStyleSheet("font: 600 20px;")
+            self.caption.setStyleSheet("font: 600 17px;")
             self.caption2.setText("")
 
         if getattr(self, "folder", ""):
             self.caption3.setText(t("folder_extracting", self.language))
-            self.caption3.setStyleSheet("font: 600 20px;")
+            self.caption3.setStyleSheet("font: 600 17px;")
          
             self.caption4.setText(self.folder)
-            self.caption4.setStyleSheet("font: normal 20px;")
+            self.caption4.setStyleSheet("font: normal 17px;")
         else:
             self.caption3.setText(t("no_folder", self.language))
-            self.caption3.setStyleSheet("font: 600 20px;")
+            self.caption3.setStyleSheet("font: 600 17px;")
             self.caption4.setText("")
 
         if getattr(self, "excel", ""):
             self.captione1.setText(t("excel_extracting", self.language))
-            self.captione1.setStyleSheet("font: 600 20px;")
+            self.captione1.setStyleSheet("font: 600 17px;")
             self.captione2.setText(self.excel)
-            self.captione2.setStyleSheet("font: normal 20px;")
+            self.captione2.setStyleSheet("font: normal 17px;")
         else:
             self.captione1.setText(t("excel_extracting", self.language))
-            self.captione1.setStyleSheet("font: 600 20px;")
+            self.captione1.setStyleSheet("font: 600 17px;")
             self.captione2.setText(resolve_excel_path(""))
-            self.captione2.setStyleSheet("font: normal 20px; color: grey;")
+            self.captione2.setStyleSheet("font: normal 17px; color: grey;")
 
         if getattr(self, "email_address", "") and getattr(self, "folder", ""):
             self.btn.setEnabled(True)
@@ -1400,11 +1432,11 @@ class MainWindow(QMainWindow):
 
         if email_data.get("type") == "excel_locked":
             self.status.setText("Waiting for Excel file to close...")
-            self.extbox.setStyleSheet("background-color: rgba(255, 165, 0, 100); margin-left: -10px;")
+            self.extbox.setStyleSheet(self._status_box_qss("#f59e0b"))
             return
         if email_data.get("type") == "excel_unlocked":
             self.status.setText(t("extraction_running", self.language))
-            self.extbox.setStyleSheet("background-color: rgba(0, 255, 0, 100); margin-left: -10px;")
+            self.extbox.setStyleSheet(self._status_box_qss("#34d399"))
             return
 
         try:
@@ -1438,9 +1470,11 @@ class MainWindow(QMainWindow):
             ]
 
             for i, label in enumerate(labels):
-                label.setStyleSheet("font-size: 18px; padding-right: 15px;")
+                label.setStyleSheet(self._cell_style(i, self.row))
                 label.setWordWrap(True)
                 label.setFixedWidth(self.col_widths[i])
+                if i == 4:
+                    label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
                 self.grid.addWidget(label, self.row, i)
 
             self.row += 1
@@ -1455,11 +1489,11 @@ class MainWindow(QMainWindow):
 
         if email_data.get("type") == "excel_locked":
             self.statusl.setText("Waiting for Excel file to close...")
-            self.lbox.setStyleSheet("background-color: rgba(255, 165, 0, 100); margin-left: -10px;")
+            self.lbox.setStyleSheet(self._status_box_qss("#f59e0b"))
             return
         if email_data.get("type") == "excel_unlocked":
             self.statusl.setText(t("listening_running", self.language))
-            self.lbox.setStyleSheet("background-color: rgba(0, 255, 0, 100); margin-left: -10px;")
+            self.lbox.setStyleSheet(self._status_box_qss("#34d399"))
             return
 
         try:
@@ -1488,9 +1522,11 @@ class MainWindow(QMainWindow):
             ]
 
             for i, label in enumerate(labels):
-                label.setStyleSheet("font-size: 18px; padding-right: 15px;")
+                label.setStyleSheet(self._cell_style(i, self.lrow))
                 label.setWordWrap(True)
                 label.setFixedWidth(self.col_widths[i])
+                if i == 4:
+                    label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
                 self.lgrid.addWidget(label, self.lrow, i)
 
             self.lrow += 1
@@ -1518,7 +1554,7 @@ class MainWindow(QMainWindow):
             self.extheader.setText(t("extraction_complete_none", self.language))
             self.extheader.setStyleSheet("font: bold 25px;")
             no_results = QLabel(t("no_vessels", self.language))
-            no_results.setStyleSheet("font: normal 20px; color: grey;")
+            no_results.setStyleSheet("font: normal 17px; color: grey;")
             self.grid.addWidget(no_results, 1, 0, 1, 3)
             self.status.setText(t("extraction_stopped", self.language))
         else:
@@ -1546,14 +1582,16 @@ class MainWindow(QMainWindow):
             for r_idx, row_data in enumerate(self.table_data, start=1):
                 for c_idx, text in enumerate(row_data['labels']):
                     lbl = QLabel(text)
-                    lbl.setStyleSheet("font-size: 18px; padding-right: 15px;")
+                    lbl.setStyleSheet(self._cell_style(c_idx, r_idx))
                     lbl.setWordWrap(True)
                     lbl.setFixedWidth(self.col_widths[c_idx])
+                    if c_idx == 4:
+                        lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
                     self.grid.addWidget(lbl, r_idx, c_idx)
 
             self.continue_listen_btn.show()
 
-        self.extbox.setStyleSheet("background-color: rgba(255, 0, 0, 100); margin-left: -10px;")
+        self.extbox.setStyleSheet(self._status_box_qss("#f87171"))
         self.btn.setEnabled(True)
         self.extracting_running = False
         self.stop_btn.hide()
@@ -1580,16 +1618,16 @@ class MainWindow(QMainWindow):
         if limit_hit:
             self.show_upgrade_dialog()
             self.lheader.setText(t("limit_reached_title", self.language))
-            self.lheader.setStyleSheet("font: bold 50px; color: #22d3ee;")
+            self.lheader.setStyleSheet("font: bold 40px; color: #22d3ee;")
             self.statusl.setText(t("extraction_stopped", self.language))
-            self.lbox.setStyleSheet("background-color: rgba(34, 211, 238, 50); margin-left: -10px;")
+            self.lbox.setStyleSheet(self._status_box_qss("#22d3ee"))
             self.listening_running = False
             self.listen_toggle_btn.setText(t("resume_listen", self.language))
         elif error_key:
             self.lheader.setText(t(error_key, self.language))
-            self.lheader.setStyleSheet("font: bold 50px; color: red;")
+            self.lheader.setStyleSheet("font: bold 40px; color: red;")
             self.statusl.setText(t(error_key, self.language))
-            self.lbox.setStyleSheet("background-color: rgba(255, 0, 0, 100); margin-left: -10px;")
+            self.lbox.setStyleSheet(self._status_box_qss("#f87171"))
             self.listening_running = False
             self.listen_toggle_btn.setText(t("resume_listen", self.language))
 
@@ -1602,7 +1640,7 @@ class MainWindow(QMainWindow):
             self.listening_running = False
             self.listen_toggle_btn.setText(t("resume_listen", self.language))
             self.statusl.setText(t("listening_paused", self.language))
-            self.lbox.setStyleSheet("background-color: rgba(255, 165, 0, 100); margin-left: -10px;")
+            self.lbox.setStyleSheet(self._status_box_qss("#f59e0b"))
         else:
             # resume — if old thread still winding down, wait non-blocking via signal
             try:
@@ -1630,7 +1668,7 @@ class MainWindow(QMainWindow):
         self.handle_listen()
         self.listen_toggle_btn.setText(t("pause_listen", self.language))
         self.statusl.setText(t("listening_running", self.language))
-        self.lbox.setStyleSheet("background-color: rgba(0, 255, 0, 100); margin-left: -10px;")
+        self.lbox.setStyleSheet(self._status_box_qss("#34d399"))
 
     def open_excel_file(self):
         path = getattr(self, '_current_excel', None) or resolve_excel_path(self.excel)
@@ -1653,7 +1691,7 @@ class MainWindow(QMainWindow):
         btn_row = QHBoxLayout()
         upgrade_btn = QPushButton(t("upgrade_btn", self.language))
         upgrade_btn.setFixedSize(280, 60)
-        upgrade_btn.setStyleSheet("font-weight: 600;")
+        upgrade_btn.setProperty("variant", "primary")
         upgrade_btn.clicked.connect(lambda: (QDesktopServices.openUrl(QUrl("https://ko-fi.com/mailaiuk/tiers")), dialog.accept()))
 
         close_btn = QPushButton(t("donation_close", self.language))
@@ -1699,151 +1737,152 @@ class MainWindow(QMainWindow):
 
     def apply_theme(self, theme):
         if theme == "dark":
-            QApplication.instance().setStyleSheet("""
-            QMainWindow { background-color: #080f1a; }
-            QWidget { background-color: transparent; }
-            QFrame { background-color: transparent; }
-            QPushButton { 
-                background-color: #0d1f35; 
-                color: #22d3ee; 
-                font: 600 18px;
+            c = {
+                "bg": "#0a0b0d", "surface": "#141517", "surface2": "#1a1b1e", "border": "#26272b",
+                "text": "#f4f4f5", "muted": "#9b9ba3", "dim": "#5c5d66",
+                "accent": "#22d3ee", "accent_hover": "#67e8f9", "on_accent": "#0a0b0d",
+                "sidebar_bg": "#0c0d0f",
             }
-            QPushButton:hover {
-                background-color: #0891b2;
-                color: #080f1a;
-            }
-            QPushButton:disabled {
-                background-color: #060d17;
-                color: #2a4a5e;
-            }
-            QLineEdit { 
-                background-color: #0d1f35; 
-                color: #f0f9ff; 
-                padding: 4px 8px;
-            }
-            QLineEdit:focus { border: 1px solid #0891b2; }
-            QScrollArea { background-color: #080f1a;}
-            QComboBox { 
-                background-color: #0d1f35; 
-                color: #22d3ee; 
-                padding: 6px 12px;
-                font-size: 14pt;
-            }
-            QLabel { color: #f0f9ff; }
-        """)
-        
-            self.sidebar.setStyleSheet("""
-                QFrame {
-                    background-color: #0a1628;
-                    border: none;
-                    border-right: 1px solid #1a3a5c;
-                }
-            """)
-
-            self.logo.setStyleSheet("""
-                font: 800 16px;
-                font-family: 'Syne';
-                color: #f0f9ff;
-                letter-spacing: 4px;
-                background-color: #0a1628;
-                border-bottom: 1px solid #1a3a5c;
-                padding-left: 16px;
-            """)
-
-            sidebar_font = "Source Han Sans SC" if self.language == "中文" else "DM Mono"
-            btn_qss = f"""
-                QPushButton {{
-                    background-color: transparent;
-                    color: #7ca4c0;
-                    font-family: '{sidebar_font}';
-                    font-size: 13px;
-                    font-weight: 500;
-                    border: none;
-                    border-left: 2px solid transparent;
-                    text-align: left;
-                    padding-left: 18px;
-                }}
-                QPushButton:hover {{
-                    background-color: #0d1f35;
-                    color: #22d3ee;
-                    border-left: 2px solid #0891b2;
-                }}
-            """
         else:
-            QApplication.instance().setStyleSheet("""
-            QMainWindow { background-color: #f0f9ff; }
-            QWidget { background-color: transparent; }
-            QFrame { background-color: transparent; }
-            QPushButton { 
-                background-color: #e0f2fe; 
-                color: #0891b2; 
-                font: 600 18px;
+            c = {
+                "bg": "#fafafa", "surface": "#ffffff", "surface2": "#f4f4f5", "border": "#e4e4e7",
+                "text": "#18181b", "muted": "#52525b", "dim": "#a1a1aa",
+                "accent": "#0891b2", "accent_hover": "#0e7490", "on_accent": "#ffffff",
+                "sidebar_bg": "#f4f4f5",
             }
-            QPushButton:hover {
-                background-color: #0891b2;
-                color: #f0f9ff;
-            }
-            QPushButton:disabled {
-                background-color: #c5dce8;
-                color: #7aaabb;
-            }
-            QLineEdit { 
-                background-color: #ffffff; 
-                color: #0a1628; 
-                border: 1px solid #bae6fd;
-                padding: 4px 8px;
-            }
-            QLineEdit:focus { border: 1px solid #0891b2; }
-            QScrollArea { background-color: #f0f9ff; }
-            QComboBox { 
-                background-color: #e0f2fe;
-                color: #0d1f35; 
+        self._theme_colors = c  # stashed for chips, pills, and active-state styling
+        ui_font = "Source Han Sans SC" if self.language == "中文" else "Syne"
+
+        QApplication.instance().setStyleSheet(f"""
+            QMainWindow {{ background-color: {c['bg']}; }}
+            QWidget {{ background-color: transparent; color: {c['text']}; }}
+            QFrame {{ background-color: transparent; }}
+            QLabel {{ color: {c['text']}; background: transparent; }}
+
+            QPushButton {{
+                background-color: {c['surface']};
+                color: {c['text']};
+                border: 1px solid {c['border']};
+                border-radius: 8px;
+                padding: 8px 18px;
+                font-family: '{ui_font}';
+                font-size: 14px;
+                font-weight: 600;
+            }}
+            QPushButton:hover {{ border-color: {c['accent']}; color: {c['accent']}; }}
+            QPushButton:pressed {{ background-color: {c['surface2']}; }}
+            QPushButton:disabled {{ color: {c['dim']}; border-color: {c['border']}; background-color: {c['bg']}; }}
+
+            QLineEdit {{
+                background-color: {c['surface']};
+                color: {c['text']};
+                border: 1px solid {c['border']};
+                border-radius: 8px;
+                padding: 8px 12px;
+                selection-background-color: {c['accent']};
+                selection-color: {c['on_accent']};
+            }}
+            QLineEdit:focus {{ border: 1px solid {c['accent']}; }}
+
+            QComboBox {{
+                background-color: {c['surface']};
+                color: {c['text']};
+                border: 1px solid {c['border']};
+                border-radius: 8px;
                 padding: 6px 12px;
-                font-size: 14pt;
-            }
-            QLabel { color: #0a1628; }
-            """)
+                font-size: 13pt;
+            }}
+            QComboBox:hover {{ border-color: {c['accent']}; }}
+            QComboBox QAbstractItemView {{
+                background-color: {c['surface']};
+                color: {c['text']};
+                border: 1px solid {c['border']};
+                selection-background-color: {c['surface2']};
+                selection-color: {c['accent']};
+                outline: none;
+            }}
 
-            self.sidebar.setStyleSheet("""
-                QFrame {
-                    background-color: #e0f2fe;
-                    border: none;
-                    border-right: 1px solid #bae6fd;
-                }
-            """)
+            QScrollArea {{ background-color: transparent; border: none; }}
 
-            self.logo.setStyleSheet("""
-                font: 800 16px;
-                font-family: 'Syne';
-                color: #0d1f35;
-                letter-spacing: 4px;
-                background-color: #e0f2fe;
-                border-bottom: 1px solid #0d1f35;
-                padding-left: 16px;
-            """)
+            QScrollBar:vertical {{ background: transparent; width: 10px; margin: 2px; }}
+            QScrollBar::handle:vertical {{ background: {c['border']}; border-radius: 5px; min-height: 30px; }}
+            QScrollBar::handle:vertical:hover {{ background: {c['dim']}; }}
+            QScrollBar:horizontal {{ background: transparent; height: 10px; margin: 2px; }}
+            QScrollBar::handle:horizontal {{ background: {c['border']}; border-radius: 5px; min-width: 30px; }}
+            QScrollBar::handle:horizontal:hover {{ background: {c['dim']}; }}
+            QScrollBar::add-line, QScrollBar::sub-line {{ width: 0; height: 0; }}
+            QScrollBar::add-page, QScrollBar::sub-page {{ background: transparent; }}
 
-            sidebar_font = "Source Han Sans SC" if self.language == "中文" else "DM Mono"
-            btn_qss = f"""
-                QPushButton {{
-                    background-color: transparent;
-                    color: #0891b2;
-                    font-family: '{sidebar_font}';
-                    font-size: 13px;
-                    font-weight: 500;
-                    border: none;
-                    border-left: 2px solid transparent;
-                    text-align: left;
-                    padding-left: 18px;
-                }}
-                QPushButton:hover {{
-                    background-color: #bae6fd;
-                    color: #0a1628;
-                    border-left: 2px solid #0891b2;
-                }}
-            """
+            QToolTip {{
+                background-color: {c['surface2']};
+                color: {c['text']};
+                border: 1px solid {c['border']};
+                padding: 4px 8px;
+                border-radius: 6px;
+            }}
+        """)
+
+        self.sidebar.setStyleSheet(f"""
+            QFrame {{
+                background-color: {c['sidebar_bg']};
+                border: none;
+                border-right: 1px solid {c['border']};
+            }}
+        """)
+
+        self.logo.setStyleSheet(f"""
+            font: 800 16px;
+            font-family: 'Syne';
+            color: {c['text']};
+            letter-spacing: 4px;
+            background-color: {c['sidebar_bg']};
+            border-bottom: 1px solid {c['border']};
+            padding-left: 16px;
+        """)
+
+        sidebar_font = "Source Han Sans SC" if self.language == "中文" else "DM Mono"
+        self._sidebar_btn_qss = f"""
+            QPushButton {{
+                background-color: transparent;
+                color: {c['muted']};
+                font-family: '{sidebar_font}';
+                font-size: 13px;
+                font-weight: 500;
+                border: none;
+                border-left: 2px solid transparent;
+                border-radius: 0px;
+                text-align: left;
+                padding-left: 18px;
+            }}
+            QPushButton:hover {{
+                background-color: {c['surface']};
+                color: {c['text']};
+                border-left: 2px solid transparent;
+            }}
+        """
+        self._sidebar_btn_active_qss = f"""
+            QPushButton {{
+                background-color: transparent;
+                color: {c['text']};
+                font-family: '{sidebar_font}';
+                font-size: 13px;
+                font-weight: 600;
+                border: none;
+                border-left: 2px solid {c['accent']};
+                border-radius: 0px;
+                text-align: left;
+                padding-left: 18px;
+            }}
+            QPushButton:hover {{
+                background-color: {c['surface']};
+                color: {c['text']};
+            }}
+        """
 
         for btn in [self.extract_sidebar_btn, self.filtering_sidebar_btn, self.settings_sidebar_btn]:
-            btn.setStyleSheet(btn_qss)
+            btn.setStyleSheet(self._sidebar_btn_qss)
+        if hasattr(self, "_active_sidebar_btn") and self._active_sidebar_btn:
+            self._active_sidebar_btn.setStyleSheet(self._sidebar_btn_active_qss)
 
         self.main_widget.set_theme(theme)
         self.pages.set_theme(theme)
@@ -1900,6 +1939,12 @@ if __name__ == "__main__":
     load_email_ids()
     config = load_config()
     refresh_access_state()
+    # Crisp rendering on fractional display scaling (125%/150%) for sharp screenshots.
+    try:
+        QApplication.setHighDpiScaleFactorRoundingPolicy(
+            Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
+    except Exception:
+        pass
     app = QApplication(sys.argv)
     app.setWindowIcon(QIcon(resource_path("icon.png")))
     window = MainWindow()
