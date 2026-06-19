@@ -37,7 +37,7 @@ API_KEY = "REPLACE_BEFORE_BUILD"
 TRIAL_DAYS = 7
 _LICENSE_SECRET = "REPLACE_BEFORE_BUILD"
 
-APP_VERSION = "1.3"
+APP_VERSION = "1.4"
 GITHUB_REPO = "MailAI-Development/Mail-AI"
 UPDATE_DOWNLOAD_URL = f"https://github.com/{GITHUB_REPO}/releases/latest/download/Mail.AI.exe"
 
@@ -1096,6 +1096,74 @@ def access_allowed():
     return is_pro_active() or trial_active()
 
 
+# ── Auto-update (via GitHub Releases) ───────────────────────────────
+def _parse_version(v):
+    v = (v or "").strip().lstrip("vV")
+    parts = []
+    for p in v.split("."):
+        digits = "".join(ch for ch in p if ch.isdigit())
+        parts.append(int(digits) if digits else 0)
+    return tuple(parts) or (0,)
+
+
+def check_for_update():
+    """Return the latest version string if a newer release exists on GitHub, else None."""
+    try:
+        resp = requests.get(
+            f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest",
+            headers={"Accept": "application/vnd.github+json"},
+            timeout=8,
+        )
+        resp.raise_for_status()
+        tag = resp.json().get("tag_name", "")
+        if tag and _parse_version(tag) > _parse_version(APP_VERSION):
+            return tag.lstrip("vV")
+    except Exception as e:
+        logger.info(f"Update check skipped: {e}")
+    return None
+
+
+def cleanup_old_update():
+    """Remove the leftover '.old' executable left by a previous self-update."""
+    if not getattr(sys, "frozen", False):
+        return
+    old_path = sys.executable + ".old"
+    if os.path.exists(old_path):
+        try:
+            os.remove(old_path)
+        except OSError:
+            pass
+
+
+def apply_update():
+    """Download the latest exe, replace the running one, and relaunch. Frozen builds only.
+    Raises on failure; on success it has already started the new exe (caller should quit)."""
+    if not getattr(sys, "frozen", False):
+        raise RuntimeError("Auto-update only applies to the built executable.")
+    exe = sys.executable
+    exe_dir = os.path.dirname(exe)
+    new_path = os.path.join(exe_dir, "Mail.AI.new.exe")
+    old_path = exe + ".old"
+
+    with requests.get(UPDATE_DOWNLOAD_URL, stream=True, timeout=180) as r:
+        r.raise_for_status()
+        with open(new_path, "wb") as f:
+            for chunk in r.iter_content(chunk_size=1 << 16):
+                if chunk:
+                    f.write(chunk)
+
+    if os.path.exists(old_path):
+        try:
+            os.remove(old_path)
+        except OSError:
+            pass
+    os.rename(exe, old_path)      # Windows allows renaming a running exe
+    os.rename(new_path, exe)      # move the freshly downloaded exe into place
+
+    import subprocess
+    subprocess.Popen([exe])      # launch the new version; caller then exits
+
+
 def validate_license_key(key: str) -> bool:
     try:
         key = key.strip().upper()
@@ -1160,7 +1228,7 @@ def is_excel_open(file_path):
 
 
 def append_data_excel(file_path, data, specific_datetime, listening):
-    headers = ['Sender', 'Subject', 'Received Time', 'MV', 'DWT/Built', 'Vessel Open Location', 'Vessel Open Date', 'Zone']
+    headers = ['MV', 'DWT/Built', 'Vessel Open Location', 'Vessel Open Date', 'Zone', 'Sender', 'Subject', 'Received Time']
 
     today = datetime.now().date()
     sheet_name = today.strftime("%d %b %Y")
@@ -1183,11 +1251,6 @@ def append_data_excel(file_path, data, specific_datetime, listening):
             sheet.append(headers)
             sheet.auto_filter.ref = "A1:H1"
 
-    if listening and specific_datetime:
-        sheet.append([f"Emails extracted from {specific_datetime} below:"])
-        sheet.append(headers)
-        sheet.auto_filter.ref = f"A{sheet.max_row}:H{sheet.max_row}"
-
     for entry in data:
         subject = entry.get('Subject', '') or ''
         if len(subject) > 50:
@@ -1196,16 +1259,20 @@ def append_data_excel(file_path, data, specific_datetime, listening):
         year = entry.get('Build Year', '') or ''
         dwt_built = f"{dwt}/{year}" if dwt and year else (dwt or year or '')
         row = [
-            entry.get('Sender', ''),
-            subject,
-            entry.get('Received Time', ''),
             entry.get('MV', ''),
             dwt_built,
             entry.get('Vessel Open Location', ''),
             entry.get('Vessel Open Date', ''),
-            entry.get('Zone', '')
+            entry.get('Zone', ''),
+            entry.get('Sender', ''),
+            subject,
+            entry.get('Received Time', ''),
         ]
         sheet.append(row)
+
+    # Apply autofilter across the full used range (8 columns A–H).
+    if sheet.max_row >= 1:
+        sheet.auto_filter.ref = f"A1:H{sheet.max_row}"
 
     workbook.save(file_path)
     workbook.close()

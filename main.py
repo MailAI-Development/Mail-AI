@@ -67,6 +67,29 @@ class ExtractWorker(QObject):
     def stop(self):
         self.running = False
 
+
+class UpdateChecker(QObject):
+    """Background check against GitHub for a newer release."""
+    update_available = Signal(str)
+
+    def run(self):
+        version = check_for_update()
+        if version:
+            self.update_available.emit(version)
+
+
+class UpdateWorker(QObject):
+    """Downloads and applies the update off the UI thread."""
+    done = Signal(bool, str)
+
+    def run(self):
+        try:
+            apply_update()
+            self.done.emit(True, "")
+        except Exception as e:
+            self.done.emit(False, str(e))
+
+
 def get_font(language):
 
     QFontDatabase.addApplicationFont(resource_path("DM_Mono/DMMono-Regular.ttf"))
@@ -423,7 +446,8 @@ class MainWindow(QMainWindow):
         self.language = config.get("language", "English")
         self.is_first_run = not config.get("setup_complete", False)
 
-        self.col_widths = [220, 200, 120, 160, 110, 150, 120, 140]
+        # Column order: MV, DWT/Built, Location, Open Date, Zone, Sender, Subject, Date
+        self.col_widths = [160, 145, 150, 120, 140, 220, 200, 120]
 
         QApplication.setFont(get_font(self.language))
 
@@ -515,7 +539,7 @@ class MainWindow(QMainWindow):
 
         self.sidebar_layout.addStretch()
 
-        ver = QLabel("  mailai.uk         v1.3")
+        ver = QLabel(f"  mailai.uk         v{APP_VERSION}")
         ver.setFixedHeight(40)
         ver.setStyleSheet("""
             font-family: 'DM Mono';
@@ -826,7 +850,8 @@ class MainWindow(QMainWindow):
         self.license_input.setPlaceholderText("MAILAI-YYYYMM-XXXXXXXXXX")
         self.license_input.setFixedSize(340, 40)
         self.license_input.setStyleSheet("QLineEdit { font-size: 15px; }")
-        self.license_input.setText(cfg.get("license_key", ""))
+        # Only show the saved key when Pro is actually active; on the trial the box stays empty.
+        self.license_input.setText(cfg.get("license_key", "") if cfg.get("is_pro") else "")
 
         self.activate_btn = QPushButton(t("activate_btn", self.language))
         self.activate_btn.setFixedSize(140, 40)
@@ -1042,9 +1067,9 @@ class MainWindow(QMainWindow):
         surface = c.get("surface", "#141517"); border = c.get("border", "#26272b")
         row_bg = surface if (row_index % 2 == 1) else "transparent"
         base = f"padding:10px 12px; background:{row_bg}; border-bottom:1px solid {border};"
-        if col == 7:  # Zone — accent, monospace
+        if col == 4:  # Zone — accent, monospace
             return f"font-family:'DM Mono'; font-size:15px; font-weight:600; color:{accent}; {base}"
-        if col == 4:  # DWT/Built — monospace, right-aligned (set in loop)
+        if col == 1:  # DWT/Built — monospace, left-aligned
             return f"font-family:'DM Mono'; font-size:15px; color:{text}; {base}"
         return f"font-size:16px; color:{text}; {base}"
 
@@ -1108,15 +1133,14 @@ class MainWindow(QMainWindow):
         self.grid.setAlignment(Qt.AlignTop)
 
         headers = [
-            t("sender", self.language),
-            t("subject", self.language),
-            t("date", self.language),
             "MV", "DWT/Built",
             t("location", self.language),
             t("open_date", self.language),
             t("zone", self.language),
+            t("sender", self.language),
+            t("subject", self.language),
+            t("date", self.language),
         ]
-
         for i, text in enumerate(headers):
             h = QLabel(text.upper())
             h.setStyleSheet(self._header_style())
@@ -1128,7 +1152,7 @@ class MainWindow(QMainWindow):
         self.continue_listen_btn = QPushButton(t("continue_listen", self.language))
         self.continue_listen_btn.setFixedSize(250, 80)
         self.continue_listen_btn.setStyleSheet("font-weight: 600;")
-        self.continue_listen_btn.clicked.connect(self.show_listening_page)
+        self.continue_listen_btn.clicked.connect(self.toggle_main_listening)
         self.continue_listen_btn.hide()
 
         self.open_excel_btn = QPushButton(t("open_excel_btn", self.language))
@@ -1201,10 +1225,10 @@ class MainWindow(QMainWindow):
         self.lgrid.setAlignment(Qt.AlignTop)
 
         headers = [
-            t("sender", self.language), t("subject", self.language),
-            t("date", self.language), "MV", "DWT/Built",
+            "MV", "DWT/Built",
             t("location", self.language), t("open_date", self.language),
-            t("zone", self.language),
+            t("zone", self.language), t("sender", self.language),
+            t("subject", self.language), t("date", self.language),
         ]
 
         for i, text in enumerate(headers):
@@ -1240,6 +1264,10 @@ class MainWindow(QMainWindow):
             self.switch_page(self.page_home)
 
     def new_extraction(self):
+        # Stop any in-window listening before tearing down the main page.
+        if getattr(self, "listen_worker", None) and self.listening_running:
+            self.listen_worker.stop()
+        self.listening_running = False
         if self.page_main is not None:
             self.pages.removeWidget(self.page_main)
             self.page_main.deleteLater()
@@ -1461,20 +1489,18 @@ class MainWindow(QMainWindow):
 
             self.table_data.append({
                 'zone': zone or "",
-                'labels': [sender, truncate(subject), received_time, mv, dwt_built, location, date, zone or ""]
+                'labels': [mv, dwt_built, location, date, zone or "", sender, truncate(subject), received_time]
             })
 
             labels = [
-                QLabel(sender), QLabel(truncate(subject)), QLabel(received_time),
-                QLabel(mv), QLabel(dwt_built), QLabel(location), QLabel(date), QLabel(zone)
+                QLabel(mv), QLabel(dwt_built), QLabel(location), QLabel(date),
+                QLabel(zone), QLabel(sender), QLabel(truncate(subject)), QLabel(received_time)
             ]
 
             for i, label in enumerate(labels):
                 label.setStyleSheet(self._cell_style(i, self.row))
                 label.setWordWrap(True)
                 label.setFixedWidth(self.col_widths[i])
-                if i == 4:
-                    label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
                 self.grid.addWidget(label, self.row, i)
 
             self.row += 1
@@ -1517,16 +1543,14 @@ class MainWindow(QMainWindow):
             self.lcount.setText(f"{t('vessels_extracted', self.language)} {ves}")
 
             labels = [
-                QLabel(sender), QLabel(truncate(subject)), QLabel(received_time),
-                QLabel(mv), QLabel(dwt_built), QLabel(location), QLabel(date), QLabel(zone)
+                QLabel(mv), QLabel(dwt_built), QLabel(location), QLabel(date),
+                QLabel(zone), QLabel(sender), QLabel(truncate(subject)), QLabel(received_time)
             ]
 
             for i, label in enumerate(labels):
                 label.setStyleSheet(self._cell_style(i, self.lrow))
                 label.setWordWrap(True)
                 label.setFixedWidth(self.col_widths[i])
-                if i == 4:
-                    label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
                 self.lgrid.addWidget(label, self.lrow, i)
 
             self.lrow += 1
@@ -1537,6 +1561,132 @@ class MainWindow(QMainWindow):
         except Exception as e:
             print(f"Error adding email to table: {e}")
 
+    def _truncate(self, text, length=50):
+        return text if len(text) <= length else text[:length] + "..."
+
+    def _row_from_email(self, email_data):
+        """Build (zone, labels[]) in the table's column order from a worker email dict."""
+        v = email_data["vessel_data"]
+        mv = v.get("MV", "")
+        dwt = v.get("Deadweight", "") or ""
+        built = v.get("Build Year", "") or ""
+        dwt_built = f"{dwt}/{built}" if dwt and built else (dwt or built or "")
+        location = v.get("Vessel Open Location", "")
+        date = v.get("Vessel Open Date", "")
+        zone = v.get("Zone", "") or ""
+        sender = email_data["sender"]
+        subject = self._truncate(email_data["subject"])
+        received = email_data["received_time"][:10]
+        return zone, [mv, dwt_built, location, date, zone, sender, subject, received]
+
+    def _render_main_table_sorted(self):
+        """Re-sort table_data (Zone alphabetical, then DWT) and repaint the main grid."""
+        def dwt_val(row):
+            s = row['labels'][1] if len(row['labels']) > 1 else ''
+            m = re.match(r'(\d+)', s or '')
+            return int(m.group(1)) if m else float('inf')
+        self.table_data.sort(key=lambda r: (
+            'ZZZ' if r.get('zone', '').upper() in ('', 'UNKNOWN') else r.get('zone', '').upper(),
+            dwt_val(r)
+        ))
+        for r in range(self.row - 1, 0, -1):
+            for c in range(len(self.col_widths)):
+                item = self.grid.itemAtPosition(r, c)
+                if item and item.widget():
+                    w = item.widget()
+                    self.grid.removeWidget(w)
+                    w.deleteLater()
+        for r_idx, row_data in enumerate(self.table_data, start=1):
+            for c_idx, text in enumerate(row_data['labels']):
+                lbl = QLabel(text)
+                lbl.setStyleSheet(self._cell_style(c_idx, r_idx))
+                lbl.setWordWrap(True)
+                lbl.setFixedWidth(self.col_widths[c_idx])
+                self.grid.addWidget(lbl, r_idx, c_idx)
+        self.row = len(self.table_data) + 1
+
+    def _set_main_status(self, color, text):
+        self.status.setText(text)
+        self.extbox.setStyleSheet(self._status_box_qss(color))
+
+    def start_main_listening(self):
+        """Continue listening within the main extraction view, feeding new vessels into
+        the same (sorted) table rather than a separate window."""
+        v, _, _ = validate(None, None, self.email_address, self.folder, self.excel, outlook, self.language)
+        if not v:
+            self._set_main_status("#f87171", t("extraction_stopped", self.language))
+            return
+        self.listening_running = True
+        self._current_excel = resolve_excel_path(self.excel)
+        self.listen_thread = QThread()
+        self.listen_worker = ExtractWorker(None)
+        generator = process_email(self.email_address, self.folder, self._current_excel, csv_dict, self.listen_worker)
+        self.listen_worker.generator = generator
+        self.listen_worker.moveToThread(self.listen_thread)
+        self.listen_worker.new_email.connect(self.add_listening_to_main_table)
+        self.listen_thread.started.connect(self.listen_worker.run)
+        self.listen_worker.done.connect(self.on_main_listen_done)
+        self.listen_worker.done.connect(self.listen_thread.quit)
+        self.listen_worker.done.connect(self.listen_worker.deleteLater)
+        self.listen_thread.finished.connect(self.listen_thread.deleteLater)
+        self.listen_thread.finished.connect(lambda: setattr(self, 'listen_thread', None))
+        self.listen_thread.start()
+        self._set_main_status("#22d3ee", t("listening_running", self.language))
+        self.continue_listen_btn.setText(t("pause_listen", self.language))
+        self.continue_listen_btn.show()
+
+    def add_listening_to_main_table(self, email_data):
+        # Excel is open → can't write, so listening is effectively paused until it closes.
+        if email_data.get("type") == "excel_locked":
+            self._set_main_status("#f59e0b", t("listening_paused", self.language) + " — close Excel to continue")
+            return
+        if email_data.get("type") == "excel_unlocked":
+            self._set_main_status("#22d3ee", t("listening_running", self.language))
+            return
+        try:
+            zone, labels = self._row_from_email(email_data)
+            self.table_data.append({'zone': zone, 'labels': labels})
+            self._render_main_table_sorted()
+            self.caption5.setText(f"{t('vessels_extracted', self.language)} {len(self.table_data)}")
+        except Exception as e:
+            print(f"Error adding listened email to table: {e}")
+
+    def on_main_listen_done(self):
+        err = getattr(self.listen_worker, "api_error_key", None)
+        limit = getattr(self.listen_worker, "limit_reached", False)
+        self.listening_running = False
+        if limit:
+            self.show_upgrade_dialog()
+            self._set_main_status("#22d3ee", t("limit_reached_title", self.language))
+        elif err:
+            self._set_main_status("#f87171", t(err, self.language))
+        else:
+            self._set_main_status("#f59e0b", t("listening_paused", self.language))
+        self.continue_listen_btn.setText(t("resume_listen", self.language))
+
+    def toggle_main_listening(self):
+        if self.listening_running:
+            if getattr(self, "listen_worker", None):
+                self.listen_worker.stop()
+            self.listening_running = False
+            self.continue_listen_btn.setText(t("resume_listen", self.language))
+            self._set_main_status("#f59e0b", t("listening_paused", self.language))
+        else:
+            try:
+                running = (hasattr(self, "listen_thread") and self.listen_thread
+                           and self.listen_thread.isRunning())
+            except RuntimeError:
+                self.listen_thread = None
+                running = False
+            if running:
+                try:
+                    self.listen_thread.finished.disconnect(self.start_main_listening)
+                except (RuntimeError, TypeError):
+                    pass
+                self.listen_thread.finished.connect(self.start_main_listening)
+            else:
+                self.start_main_listening()
+
     def on_extraction_done(self):
         error_key = getattr(self.worker, "api_error_key", None)
         limit_hit = getattr(self.worker, "limit_reached", False)
@@ -1546,52 +1696,28 @@ class MainWindow(QMainWindow):
             self.extheader.setText(t("limit_reached_title", self.language))
             self.extheader.setStyleSheet("font: bold 25px; color: #22d3ee;")
             self.status.setText(t("extraction_stopped", self.language))
+            self.extbox.setStyleSheet(self._status_box_qss("#f87171"))
         elif error_key:
             self.extheader.setText(t(error_key, self.language))
             self.extheader.setStyleSheet("font: bold 25px; color: red;")
             self.status.setText(t("extraction_stopped", self.language))
-        elif self.row == 1:
+            self.extbox.setStyleSheet(self._status_box_qss("#f87171"))
+        elif not self.table_data:
             self.extheader.setText(t("extraction_complete_none", self.language))
             self.extheader.setStyleSheet("font: bold 25px;")
             no_results = QLabel(t("no_vessels", self.language))
             no_results.setStyleSheet("font: normal 17px; color: grey;")
             self.grid.addWidget(no_results, 1, 0, 1, 3)
             self.status.setText(t("extraction_stopped", self.language))
+            self.extbox.setStyleSheet(self._status_box_qss("#f87171"))
         else:
             self.extheader.setText(t("extraction_complete", self.language))
             self.extheader.setStyleSheet("font: bold 25px;")
-            self.status.setText(t("extraction_stopped", self.language))
+            self._render_main_table_sorted()
+            # Bake listening into this same view — keep the extracted vessels on screen and
+            # keep listening for new arrivals, inserting them in sorted order (no window switch).
+            self.start_main_listening()
 
-            # Sort table by Zone alphabetically, then by DWT smallest to largest within each zone
-            def _dwt_sort_val(row):
-                dwt_str = row.get('labels', [])[4] if len(row.get('labels', [])) > 4 else ''
-                m = re.match(r'(\d+)', dwt_str or '')
-                return int(m.group(1)) if m else float('inf')
-
-            self.table_data.sort(key=lambda r: (
-                'ZZZ' if r.get('zone', '').upper() in ('', 'UNKNOWN') else r.get('zone', '').upper(),
-                _dwt_sort_val(r)
-            ))
-            for r in range(self.row - 1, 0, -1):
-                for c in range(len(self.col_widths)):
-                    item = self.grid.itemAtPosition(r, c)
-                    if item and item.widget():
-                        w = item.widget()
-                        self.grid.removeWidget(w)
-                        w.deleteLater()
-            for r_idx, row_data in enumerate(self.table_data, start=1):
-                for c_idx, text in enumerate(row_data['labels']):
-                    lbl = QLabel(text)
-                    lbl.setStyleSheet(self._cell_style(c_idx, r_idx))
-                    lbl.setWordWrap(True)
-                    lbl.setFixedWidth(self.col_widths[c_idx])
-                    if c_idx == 4:
-                        lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-                    self.grid.addWidget(lbl, r_idx, c_idx)
-
-            self.continue_listen_btn.show()
-
-        self.extbox.setStyleSheet(self._status_box_qss("#f87171"))
         self.btn.setEnabled(True)
         self.extracting_running = False
         self.stop_btn.hide()
@@ -1600,7 +1726,7 @@ class MainWindow(QMainWindow):
 
         self.tray.showMessage(
             "Extraction complete",
-            f"{self.row - 1} vessels extracted",
+            f"{len(self.table_data)} vessels extracted",
             QIcon(resource_path("icon.png")),
             3000
         )
@@ -1704,6 +1830,77 @@ class MainWindow(QMainWindow):
         layout.addLayout(btn_row)
 
         dialog.exec()
+
+    def start_update_check(self):
+        # Only the built executable can self-update.
+        if not getattr(sys, "frozen", False):
+            return
+        self._upd_check_thread = QThread()
+        self._upd_checker = UpdateChecker()
+        self._upd_checker.moveToThread(self._upd_check_thread)
+        self._upd_check_thread.started.connect(self._upd_checker.run)
+        self._upd_checker.update_available.connect(self.prompt_update)
+        self._upd_checker.update_available.connect(self._upd_check_thread.quit)
+        self._upd_check_thread.start()
+
+    def prompt_update(self, version):
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Update available")
+        dialog.setFixedWidth(460)
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(30, 30, 30, 30)
+        layout.setSpacing(20)
+
+        msg = QLabel(f"A new version of Mail AI (v{version}) is available.\n"
+                     f"You're on v{APP_VERSION}. Update now to get the latest features and fixes.")
+        msg.setWordWrap(True)
+        msg.setStyleSheet("font: 16px;")
+        layout.addWidget(msg)
+
+        btn_row = QHBoxLayout()
+        update_btn = QPushButton("Update now")
+        update_btn.setFixedSize(200, 56)
+        update_btn.clicked.connect(lambda: (dialog.accept(), self.do_update()))
+        later_btn = QPushButton("Later")
+        later_btn.setFixedSize(140, 56)
+        later_btn.clicked.connect(dialog.reject)
+        btn_row.addWidget(update_btn)
+        btn_row.addSpacing(16)
+        btn_row.addWidget(later_btn)
+        layout.addLayout(btn_row)
+
+        dialog.exec()
+
+    def do_update(self):
+        self._upd_dialog = QDialog(self)
+        self._upd_dialog.setWindowTitle("Updating Mail AI")
+        self._upd_dialog.setFixedWidth(420)
+        lay = QVBoxLayout(self._upd_dialog)
+        lay.setContentsMargins(28, 28, 28, 28)
+        lbl = QLabel("Downloading the latest version…\nMail AI will restart automatically.")
+        lbl.setWordWrap(True)
+        lbl.setStyleSheet("font: 16px;")
+        lay.addWidget(lbl)
+
+        self._upd_thread = QThread()
+        self._upd_worker = UpdateWorker()
+        self._upd_worker.moveToThread(self._upd_thread)
+        self._upd_thread.started.connect(self._upd_worker.run)
+        self._upd_worker.done.connect(self._on_update_done)
+        self._upd_thread.start()
+        self._upd_dialog.exec()
+
+    def _on_update_done(self, ok, err):
+        self._upd_thread.quit()
+        if ok:
+            QApplication.quit()  # the new exe was already launched by apply_update()
+        else:
+            self._upd_dialog.reject()
+            QMessageBox.warning(
+                self, "Update failed",
+                f"Could not update automatically:\n{err}\n\n"
+                f"Please download the latest version from mailai.uk."
+            )
 
     def activate_license(self):
         key = self.license_input.text().strip()
@@ -1939,6 +2136,7 @@ if __name__ == "__main__":
     load_email_ids()
     config = load_config()
     refresh_access_state()
+    cleanup_old_update()  # remove leftover .old exe from a previous self-update
     # Crisp rendering on fractional display scaling (125%/150%) for sharp screenshots.
     try:
         QApplication.setHighDpiScaleFactorRoundingPolicy(
@@ -1950,4 +2148,5 @@ if __name__ == "__main__":
     window = MainWindow()
     window.apply_theme(config.get("theme", "dark"))
     window.show()
+    window.start_update_check()  # check GitHub for a newer release (built exe only)
     sys.exit(app.exec())
