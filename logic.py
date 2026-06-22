@@ -39,7 +39,7 @@ _LICENSE_SECRET = "REPLACE_BEFORE_BUILD"
 
 APP_VERSION = "1.4"
 GITHUB_REPO = "MailAI-Development/Mail-AI"
-UPDATE_DOWNLOAD_URL = f"https://github.com/{GITHUB_REPO}/releases/latest/download/Mail.AI.exe"
+UPDATE_DOWNLOAD_URL = f"https://github.com/{GITHUB_REPO}/releases/latest/download/Mail.AI.{APP_VERSION}.exe"
 
 class APIError(Exception):
     pass
@@ -1135,6 +1135,28 @@ def cleanup_old_update():
             pass
 
 
+def _latest_exe_url():
+    """Resolve the actual .exe asset URL from the latest GitHub release.
+
+    Asset names are version-suffixed (e.g. Mail.AI.v1.4.exe), so a fixed
+    /releases/latest/download/Mail.AI.exe URL would 404. Falls back to the
+    hardcoded URL only if the API call fails to find an .exe asset."""
+    try:
+        resp = requests.get(
+            f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest",
+            headers={"Accept": "application/vnd.github+json"},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        for asset in resp.json().get("assets", []):
+            name = (asset.get("name") or "").lower()
+            if name.endswith(".exe"):
+                return asset["browser_download_url"]
+    except Exception as e:
+        logger.info(f"Could not resolve release asset via API: {e}")
+    return UPDATE_DOWNLOAD_URL
+
+
 def apply_update():
     """Download the latest exe, replace the running one, and relaunch. Frozen builds only.
     Raises on failure; on success it has already started the new exe (caller should quit)."""
@@ -1145,7 +1167,8 @@ def apply_update():
     new_path = os.path.join(exe_dir, "Mail.AI.new.exe")
     old_path = exe + ".old"
 
-    with requests.get(UPDATE_DOWNLOAD_URL, stream=True, timeout=180) as r:
+    download_url = _latest_exe_url()
+    with requests.get(download_url, stream=True, timeout=180) as r:
         r.raise_for_status()
         with open(new_path, "wb") as f:
             for chunk in r.iter_content(chunk_size=1 << 16):

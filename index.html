@@ -267,6 +267,26 @@
     .price-list li::before { content: '✓'; color: var(--accent); font-weight: 700; flex-shrink: 0; }
     .price-card .btn-primary, .price-card .btn-secondary { width: 100%; justify-content: center; }
 
+    /* ── Testimonial ── */
+    .testimonial { padding: 8rem 0; text-align: center; }
+    .testimonial .quote {
+      font-family: var(--font-display);
+      font-size: clamp(1.4rem, 2.5vw, 2rem);
+      font-weight: 600;
+      line-height: 1.5;
+      letter-spacing: -0.01em;
+      color: var(--text);
+      max-width: 800px;
+      margin: 0 auto 2rem;
+    }
+    .testimonial .who {
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
     /* ── Final CTA ── */
     .cta { text-align: center; }
     .cta h2 { font-family: var(--font-display); font-size: clamp(2rem, 4vw, 3rem); font-weight: 800; letter-spacing: -0.02em; margin-bottom: 1rem; }
@@ -508,6 +528,14 @@
         </div>
       </div>
 
+    </div>
+  </section>
+
+  <!-- Testimonial -->
+  <section class="testimonial">
+    <div class="wrap reveal">
+      <p class="quote">Mail AI cuts my vessel position tracking time by around 80%. I no longer need to search through hundreds of emails or worry about missing vessel updates, which gives me more time to focus on fixing business and supporting clients.</p>
+      <p class="who">Charterhouse Shipbroking</p>
     </div>
   </section>
 

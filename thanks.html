@@ -83,13 +83,29 @@
   </footer>
 
   <script>
-    window.addEventListener('load', () => {
+    function triggerDownload(url) {
       const a = document.createElement('a');
-      a.href = 'https://github.com/MailAI-Development/Mail-AI/releases/latest/download/Mail.AI.exe';
+      a.href = url;
       a.download = '';
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
+    }
+    window.addEventListener('load', async () => {
+      // Resolve the actual .exe asset from the latest GitHub release (asset names include
+      // the version, e.g. Mail.AI.v1.4.exe, so a fixed filename URL would 404).
+      const fallback = 'https://github.com/MailAI-Development/Mail-AI/releases/latest';
+      try {
+        const r = await fetch('https://api.github.com/repos/MailAI-Development/Mail-AI/releases/latest',
+                              { headers: { 'Accept': 'application/vnd.github+json' } });
+        if (r.ok) {
+          const j = await r.json();
+          const exe = (j.assets || []).find(a => (a.name || '').toLowerCase().endsWith('.exe'));
+          if (exe) { triggerDownload(exe.browser_download_url); return; }
+        }
+      } catch (e) { /* fall through */ }
+      // Couldn't resolve the asset — send them to the releases page to grab it manually.
+      window.location.href = fallback;
     });
   </script>
 </body>

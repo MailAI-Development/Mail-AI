@@ -447,7 +447,7 @@ class MainWindow(QMainWindow):
         self.is_first_run = not config.get("setup_complete", False)
 
         # Column order: MV, DWT/Built, Location, Open Date, Zone, Sender, Subject, Date
-        self.col_widths = [160, 145, 150, 120, 140, 220, 200, 120]
+        self.col_widths = [160, 145, 150, 160, 140, 220, 200, 120]
 
         QApplication.setFont(get_font(self.language))
 
@@ -1061,6 +1061,17 @@ class MainWindow(QMainWindow):
                 f"letter-spacing:1px; color:{muted}; padding:10px 12px; "
                 f"border-bottom:1px solid {border};")
 
+    def _header_btn_qss(self, active):
+        c = getattr(self, "_theme_colors", {})
+        muted = c.get("muted", "#9b9ba3"); text = c.get("text", "#f4f4f5")
+        border = c.get("border", "#26272b"); accent = c.get("accent", "#22d3ee")
+        col = accent if active else muted
+        return (f"QPushButton {{ background:transparent; border:none; border-radius:0; "
+                f"border-bottom:1px solid {border}; color:{col}; font-family:'DM Mono'; "
+                f"font-size:13px; font-weight:600; letter-spacing:1px; padding:10px 12px; "
+                f"text-align:left; }}"
+                f"QPushButton:hover {{ color:{text}; }}")
+
     def _cell_style(self, col, row_index):
         c = getattr(self, "_theme_colors", {})
         text = c.get("text", "#f4f4f5"); accent = c.get("accent", "#22d3ee")
@@ -1123,7 +1134,9 @@ class MainWindow(QMainWindow):
         self.container = QWidget()
         self.container.setMinimumWidth(1510)
         self.row = 1
-        self.table_data = []  # list of {'zone': str, 'labels': [str, ...]}
+        self.table_data = []  # list of {'zone': str, 'labels': [str, ...], 'listened': bool}
+        self._sort_col = None   # None = default (Zone, then DWT); int = sort by that column A–Z
+        self._sort_asc = True
 
         self.grid = QGridLayout(self.container)
         self.grid.setContentsMargins(10, 10, 10, 10)
@@ -1132,7 +1145,7 @@ class MainWindow(QMainWindow):
         self.grid.setRowStretch(0, 0)
         self.grid.setAlignment(Qt.AlignTop)
 
-        headers = [
+        self._header_texts = [
             "MV", "DWT/Built",
             t("location", self.language),
             t("open_date", self.language),
@@ -1141,11 +1154,16 @@ class MainWindow(QMainWindow):
             t("subject", self.language),
             t("date", self.language),
         ]
-        for i, text in enumerate(headers):
-            h = QLabel(text.upper())
-            h.setStyleSheet(self._header_style())
-            h.setFixedWidth(self.col_widths[i])
-            self.grid.addWidget(h, 0, i)
+        self._header_btns = []
+        for i, text in enumerate(self._header_texts):
+            b = QPushButton(text.upper())
+            b.setFixedWidth(self.col_widths[i])
+            b.setCursor(Qt.PointingHandCursor)
+            b.setToolTip("Click to sort A–Z")
+            b.setStyleSheet(self._header_btn_qss(active=False))
+            b.clicked.connect(lambda _=False, col=i: self._sort_by_column(col))
+            self.grid.addWidget(b, 0, i)
+            self._header_btns.append(b)
 
         self.scrollf.setWidget(self.container)
 
@@ -1580,15 +1598,28 @@ class MainWindow(QMainWindow):
         return zone, [mv, dwt_built, location, date, zone, sender, subject, received]
 
     def _render_main_table_sorted(self):
-        """Re-sort table_data (Zone alphabetical, then DWT) and repaint the main grid."""
-        def dwt_val(row):
-            s = row['labels'][1] if len(row['labels']) > 1 else ''
-            m = re.match(r'(\d+)', s or '')
-            return int(m.group(1)) if m else float('inf')
-        self.table_data.sort(key=lambda r: (
-            'ZZZ' if r.get('zone', '').upper() in ('', 'UNKNOWN') else r.get('zone', '').upper(),
-            dwt_val(r)
-        ))
+        """Repaint the main grid, sorted. Default order is Zone (A–Z) then DWT; if the user
+        clicked a header, sort A–Z by that column instead. Listened rows get a teal marker."""
+        if self._sort_col is None:
+            def dwt_val(row):
+                s = row['labels'][1] if len(row['labels']) > 1 else ''
+                m = re.match(r'(\d+)', s or '')
+                return int(m.group(1)) if m else float('inf')
+            self.table_data.sort(key=lambda r: (
+                'ZZZ' if r.get('zone', '').upper() in ('', 'UNKNOWN') else r.get('zone', '').upper(),
+                dwt_val(r)
+            ))
+        else:
+            col = self._sort_col
+            if col == 1:  # DWT/Built — sort numerically (9K before 10K, not lexically)
+                def sort_key(r):
+                    m = re.match(r'(\d+)', r['labels'][1] or '')
+                    return int(m.group(1)) if m else float('inf')
+            else:
+                def sort_key(r):
+                    return (r['labels'][col] or '').upper()
+            self.table_data.sort(key=sort_key, reverse=not self._sort_asc)
+        accent = getattr(self, "_theme_colors", {}).get("accent", "#22d3ee")
         for r in range(self.row - 1, 0, -1):
             for c in range(len(self.col_widths)):
                 item = self.grid.itemAtPosition(r, c)
@@ -1597,13 +1628,38 @@ class MainWindow(QMainWindow):
                     self.grid.removeWidget(w)
                     w.deleteLater()
         for r_idx, row_data in enumerate(self.table_data, start=1):
+            listened = row_data.get('listened')
             for c_idx, text in enumerate(row_data['labels']):
-                lbl = QLabel(text)
+                if c_idx == 0 and listened:
+                    safe = (text or "").replace('&', '&amp;').replace('<', '&lt;')
+                    lbl = QLabel(f'<span style="color:{accent}">&#9679;</span>&nbsp;&nbsp;{safe}')
+                    lbl.setToolTip("Added via live listening")
+                else:
+                    lbl = QLabel(text)
                 lbl.setStyleSheet(self._cell_style(c_idx, r_idx))
                 lbl.setWordWrap(True)
                 lbl.setFixedWidth(self.col_widths[c_idx])
                 self.grid.addWidget(lbl, r_idx, c_idx)
         self.row = len(self.table_data) + 1
+
+    def _sort_by_column(self, col):
+        if self._sort_col == col:
+            self._sort_asc = not self._sort_asc
+        else:
+            self._sort_col = col
+            self._sort_asc = True
+        self._render_main_table_sorted()
+        self._update_header_arrows()
+
+    def _update_header_arrows(self):
+        for i, b in enumerate(getattr(self, "_header_btns", [])):
+            base = self._header_texts[i].upper()
+            if i == self._sort_col:
+                b.setText(base + ("  ▲" if self._sort_asc else "  ▼"))
+                b.setStyleSheet(self._header_btn_qss(active=True))
+            else:
+                b.setText(base)
+                b.setStyleSheet(self._header_btn_qss(active=False))
 
     def _set_main_status(self, color, text):
         self.status.setText(text)
@@ -1645,7 +1701,7 @@ class MainWindow(QMainWindow):
             return
         try:
             zone, labels = self._row_from_email(email_data)
-            self.table_data.append({'zone': zone, 'labels': labels})
+            self.table_data.append({'zone': zone, 'labels': labels, 'listened': True})
             self._render_main_table_sorted()
             self.caption5.setText(f"{t('vessels_extracted', self.language)} {len(self.table_data)}")
         except Exception as e:
