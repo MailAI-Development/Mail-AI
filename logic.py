@@ -1250,12 +1250,13 @@ def is_excel_open(file_path):
         return True
 
 
-def append_data_excel(file_path, data, specific_datetime, listening):
+def append_data_excel(file_path, data, specific_datetime, listening, run_header=False):
     headers = ['MV', 'DWT/Built', 'Vessel Open Location', 'Vessel Open Date', 'Zone', 'Sender', 'Subject', 'Received Time']
 
     today = datetime.now().date()
     sheet_name = today.strftime("%d %b %Y")
 
+    fresh_sheet = False  # did we just create the sheet (so it already starts with a header)?
     if not os.path.exists(file_path):
         workbook = openpyxl.Workbook()
         sheet = workbook.active
@@ -1265,6 +1266,7 @@ def append_data_excel(file_path, data, specific_datetime, listening):
         workbook.save(file_path)
         workbook = openpyxl.load_workbook(file_path)
         sheet = workbook[sheet_name]
+        fresh_sheet = True
     else:
         workbook = openpyxl.load_workbook(file_path)
         if sheet_name in workbook.sheetnames:
@@ -1273,6 +1275,13 @@ def append_data_excel(file_path, data, specific_datetime, listening):
             sheet = workbook.create_sheet(title=sheet_name)
             sheet.append(headers)
             sheet.auto_filter.ref = "A1:H1"
+            fresh_sheet = True
+
+    # A new extraction run appended into an already-populated sheet gets its own header
+    # row, so each run's block is labelled. (A freshly-created sheet already starts with
+    # one, and the per-email listening appends pass run_header=False so they flow under it.)
+    if run_header and not fresh_sheet and sheet.max_row >= 1:
+        sheet.append(headers)
 
     for entry in data:
         subject = entry.get('Subject', '') or ''
@@ -1301,9 +1310,17 @@ def append_data_excel(file_path, data, specific_datetime, listening):
     workbook.close()
 
 
-def append_error_message(file_path, sender_email, email_subject):
+def append_error_message(file_path, sender_email, email_subject, worker=None):
+    # Bounded, stoppable wait for Excel to close — never block the worker thread forever.
+    waited = 0
     while is_excel_open(file_path):
+        if worker is not None and not worker.running:
+            return
         time.sleep(2)
+        waited += 2
+        if waited >= 300:  # give up after ~5 min rather than hang
+            logger.error("Excel locked > 5 min — skipping error-message write")
+            return
 
     # Check if the Excel file exists
     if not os.path.exists(file_path):
@@ -1538,7 +1555,7 @@ def process_email(email_address,folder,excel_path,csv_dict,worker):
                         logger.info(f"Processing email from: {sender_email} with subject: {email_subject}")
                         preprocessed_body = get_first_n_lines(email_body)
                         if not preprocessed_body:
-                            append_error_message(excel_path, sender_email, email_subject)
+                            append_error_message(excel_path, sender_email, email_subject, worker)
                         else:
                             if not access_allowed():
                                 limit_hit = True
@@ -1665,7 +1682,7 @@ def night_extraction(specific_datetime, email_address, folder, excel_path, csv_d
                 logger.info(f"Processing email from: {sender_email} with subject: {email_subject}")
                 preprocessed_body = get_first_n_lines(email_body)
                 if not preprocessed_body:
-                    append_error_message(excel_path, sender_email, email_subject)
+                    append_error_message(excel_path, sender_email, email_subject, worker)
                     continue
 
                 if not access_allowed():
@@ -1722,7 +1739,7 @@ def night_extraction(specific_datetime, email_address, folder, excel_path, csv_d
                         return
                 yield {"type": "excel_unlocked"}
             logger.info(f"Writing {len(processed_emails)} vessels to Excel")
-            append_data_excel(excel_path, processed_emails, specific_datetime, True)
+            append_data_excel(excel_path, processed_emails, specific_datetime, True, run_header=True)
             logger.info("Extraction complete — results written to Excel")
             return True
         else:

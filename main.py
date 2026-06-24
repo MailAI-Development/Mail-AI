@@ -3,10 +3,13 @@ import pythoncom
 from PySide6.QtWidgets import (
     QApplication, QWidget, QMainWindow, QVBoxLayout, QHBoxLayout, QSystemTrayIcon, QMenu,
     QPushButton, QLabel, QFrame, QStackedWidget, QLineEdit, QScrollArea, QGridLayout, QComboBox,
-    QFileDialog, QDialog, QMessageBox, QSizePolicy
+    QFileDialog, QDialog, QMessageBox, QSizePolicy, QTableWidget, QTableWidgetItem,
+    QHeaderView, QAbstractItemView
 )
-from PySide6.QtGui import QFontDatabase, QFont, QColor, QPalette, QIcon, QDesktopServices
-from PySide6.QtCore import Qt, QObject, Signal, Slot, QThread, QTimer, QUrl
+from PySide6.QtGui import (
+    QFontDatabase, QFont, QColor, QPalette, QIcon, QDesktopServices, QPixmap, QPainter
+)
+from PySide6.QtCore import Qt, QObject, Signal, Slot, QThread, QTimer, QUrl, QEvent
 
 import ctypes
 ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('Mail AI')
@@ -1125,26 +1128,16 @@ class MainWindow(QMainWindow):
         self.caption5 = QLabel("")
         self.caption5.setStyleSheet("font: 600 17px;")
 
-        self.scrollf = QScrollArea()
-        self.scrollf.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.scrollf.setMinimumSize(560, 280)
-        self.scrollf.setWidgetResizable(True)
-        self.scrollf.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
-        self.scrollf.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
-        self.container = QWidget()
-        self.container.setMinimumWidth(1510)
-        self.row = 1
-        self.table_data = []  # list of {'zone': str, 'labels': [str, ...], 'listened': bool}
-        self._sort_col = None   # None = default (Zone, then DWT); int = sort by that column A–Z
+        # Table data model. Each row: {'zone', 'labels'[8], 'listened', 'starred', 'seq'}.
+        self.table_data = []
+        self._sort_col = None     # None = default order; int (0–7) = sort by that label column
         self._sort_asc = True
+        self._user_sorted = False  # True once the user clicks a header to sort
+        self._seq_counter = 0      # insertion order, for newest-first pinning of listened rows
+        self._populating = False   # guards itemChanged while we rebuild the table
+        self._visible_rows = []    # row-dicts in current display order (maps view row -> data)
 
-        self.grid = QGridLayout(self.container)
-        self.grid.setContentsMargins(10, 10, 10, 10)
-        self.grid.setHorizontalSpacing(30)
-        self.grid.setVerticalSpacing(15)
-        self.grid.setRowStretch(0, 0)
-        self.grid.setAlignment(Qt.AlignTop)
-
+        # Column 0 is the star toggle; columns 1–8 are the data columns.
         self._header_texts = [
             "MV", "DWT/Built",
             t("location", self.language),
@@ -1154,18 +1147,38 @@ class MainWindow(QMainWindow):
             t("subject", self.language),
             t("date", self.language),
         ]
-        self._header_btns = []
-        for i, text in enumerate(self._header_texts):
-            b = QPushButton(text.upper())
-            b.setFixedWidth(self.col_widths[i])
-            b.setCursor(Qt.PointingHandCursor)
-            b.setToolTip("Click to sort A–Z")
-            b.setStyleSheet(self._header_btn_qss(active=False))
-            b.clicked.connect(lambda _=False, col=i: self._sort_by_column(col))
-            self.grid.addWidget(b, 0, i)
-            self._header_btns.append(b)
+        self.table = QTableWidget(0, len(self._header_texts) + 1)
+        self.table.setHorizontalHeaderLabels([""] + [h.upper() for h in self._header_texts])
+        self.table.verticalHeader().setVisible(False)
+        self.table.setShowGrid(False)
+        self.table.setWordWrap(True)
+        self.table.setAlternatingRowColors(True)  # row striping (see alternate-background in _table_qss)
+        self.table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.table.setMinimumSize(560, 280)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectItems)
+        self.table.setSelectionMode(QAbstractItemView.SingleSelection)
+        # Double-click (or F2) edits a cell; the star column stays non-editable.
+        self.table.setEditTriggers(QAbstractItemView.DoubleClicked | QAbstractItemView.EditKeyPressed)
+        self.table.setStyleSheet(self._table_qss())
+        self.table.setColumnWidth(0, 44)
+        for i, w in enumerate(self.col_widths):
+            self.table.setColumnWidth(i + 1, w)
+        header = self.table.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.Interactive)
+        header.setSortIndicatorShown(False)
+        header.setSectionsClickable(True)
+        header.setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)  # align headers with the left-aligned cells
+        header.sectionClicked.connect(self._on_header_clicked)
+        self.table.cellClicked.connect(self._on_cell_clicked)
+        self.table.itemChanged.connect(self._on_item_changed)
+        # Click empty space in the table, or anywhere off it, to deselect the current cell.
+        # An application-wide filter is needed so clicks on non-focusable widgets still deselect.
+        if not getattr(self, "_table_filter_installed", False):
+            QApplication.instance().installEventFilter(self)
+            self._table_filter_installed = True
 
-        self.scrollf.setWidget(self.container)
+        # Small teal dot used to mark rows that arrived via live listening.
+        self._dot_icon = self._make_dot_icon()
 
         self.continue_listen_btn = QPushButton(t("continue_listen", self.language))
         self.continue_listen_btn.setFixedSize(250, 80)
@@ -1192,7 +1205,7 @@ class MainWindow(QMainWindow):
         content_layout.addSpacing(5)
         content_layout.addLayout(btn_row)
         content_layout.addWidget(self.caption5, alignment=Qt.AlignLeft)
-        content_layout.addWidget(self.scrollf, 1)
+        content_layout.addWidget(self.table, 1)
 
         return content
 
@@ -1282,9 +1295,19 @@ class MainWindow(QMainWindow):
             self.switch_page(self.page_home)
 
     def new_extraction(self):
-        # Stop any in-window listening before tearing down the main page.
-        if getattr(self, "listen_worker", None) and self.listening_running:
-            self.listen_worker.stop()
+        # Stop any in-window listening before tearing down the main page. Disconnect the
+        # worker's UI slots first so its still-pending signals can't fire into the widgets
+        # we're about to delete (would raise "C++ object already deleted"). The thread.quit
+        # / deleteLater connections on `done` are left intact so the thread still cleans up.
+        if getattr(self, "listen_worker", None):
+            for sig, slot in ((self.listen_worker.new_email, self.add_listening_to_main_table),
+                              (self.listen_worker.done, self.on_main_listen_done)):
+                try:
+                    sig.disconnect(slot)
+                except (RuntimeError, TypeError):
+                    pass
+            if self.listening_running:
+                self.listen_worker.stop()
         self.listening_running = False
         if self.page_main is not None:
             self.pages.removeWidget(self.page_main)
@@ -1505,24 +1528,16 @@ class MainWindow(QMainWindow):
 
             self.caption5.setText(f"{t('vessels_extracted', self.language)} {ves}")
 
+            self._seq_counter += 1
             self.table_data.append({
                 'zone': zone or "",
-                'labels': [mv, dwt_built, location, date, zone or "", sender, truncate(subject), received_time]
+                'labels': [mv, dwt_built, location, date, zone or "", sender, truncate(subject), received_time],
+                'listened': False,
+                'starred': False,
+                'seq': self._seq_counter,
             })
-
-            labels = [
-                QLabel(mv), QLabel(dwt_built), QLabel(location), QLabel(date),
-                QLabel(zone), QLabel(sender), QLabel(truncate(subject)), QLabel(received_time)
-            ]
-
-            for i, label in enumerate(labels):
-                label.setStyleSheet(self._cell_style(i, self.row))
-                label.setWordWrap(True)
-                label.setFixedWidth(self.col_widths[i])
-                self.grid.addWidget(label, self.row, i)
-
-            self.row += 1
-            self.scrollf.verticalScrollBar().setValue(self.scrollf.verticalScrollBar().maximum())
+            self._render_main_table()
+            self.table.scrollToBottom()
 
             self.emails_processed += 1
 
@@ -1597,73 +1612,162 @@ class MainWindow(QMainWindow):
         received = email_data["received_time"][:10]
         return zone, [mv, dwt_built, location, date, zone, sender, subject, received]
 
-    def _render_main_table_sorted(self):
-        """Repaint the main grid, sorted. Default order is Zone (A–Z) then DWT; if the user
-        clicked a header, sort A–Z by that column instead. Listened rows get a teal marker."""
-        if self._sort_col is None:
-            def dwt_val(row):
-                s = row['labels'][1] if len(row['labels']) > 1 else ''
-                m = re.match(r'(\d+)', s or '')
-                return int(m.group(1)) if m else float('inf')
-            self.table_data.sort(key=lambda r: (
-                'ZZZ' if r.get('zone', '').upper() in ('', 'UNKNOWN') else r.get('zone', '').upper(),
-                dwt_val(r)
-            ))
-        else:
-            col = self._sort_col
-            if col == 1:  # DWT/Built — sort numerically (9K before 10K, not lexically)
-                def sort_key(r):
-                    m = re.match(r'(\d+)', r['labels'][1] or '')
-                    return int(m.group(1)) if m else float('inf')
-            else:
-                def sort_key(r):
-                    return (r['labels'][col] or '').upper()
-            self.table_data.sort(key=sort_key, reverse=not self._sort_asc)
+    def _make_dot_icon(self):
+        """A small filled teal circle, used to mark live-listened rows on the MV column."""
         accent = getattr(self, "_theme_colors", {}).get("accent", "#22d3ee")
-        for r in range(self.row - 1, 0, -1):
-            for c in range(len(self.col_widths)):
-                item = self.grid.itemAtPosition(r, c)
-                if item and item.widget():
-                    w = item.widget()
-                    self.grid.removeWidget(w)
-                    w.deleteLater()
-        for r_idx, row_data in enumerate(self.table_data, start=1):
-            listened = row_data.get('listened')
-            for c_idx, text in enumerate(row_data['labels']):
-                if c_idx == 0 and listened:
-                    safe = (text or "").replace('&', '&amp;').replace('<', '&lt;')
-                    lbl = QLabel(f'<span style="color:{accent}">&#9679;</span>&nbsp;&nbsp;{safe}')
-                    lbl.setToolTip("Added via live listening")
-                else:
-                    lbl = QLabel(text)
-                lbl.setStyleSheet(self._cell_style(c_idx, r_idx))
-                lbl.setWordWrap(True)
-                lbl.setFixedWidth(self.col_widths[c_idx])
-                self.grid.addWidget(lbl, r_idx, c_idx)
-        self.row = len(self.table_data) + 1
+        pm = QPixmap(14, 14)
+        pm.fill(Qt.transparent)
+        p = QPainter(pm)
+        p.setRenderHint(QPainter.Antialiasing)
+        p.setBrush(QColor(accent))
+        p.setPen(Qt.NoPen)
+        p.drawEllipse(2, 2, 10, 10)
+        p.end()
+        return QIcon(pm)
 
-    def _sort_by_column(self, col):
+    def _table_qss(self):
+        c = getattr(self, "_theme_colors", {})
+        text = c.get("text", "#f4f4f5"); muted = c.get("muted", "#9b9ba3")
+        border = c.get("border", "#26272b"); surface = c.get("surface", "#141517")
+        accent = c.get("accent", "#22d3ee"); bg = c.get("bg", "#0a0b0d")
+        return (
+            f"QTableWidget {{ background:transparent; border:none; color:{text}; font-size:16px; "
+            f"gridline-color:{border}; alternate-background-color:{surface}; "
+            f"selection-background-color:{accent}; selection-color:{bg}; }}"
+            f"QTableWidget::item {{ padding:8px 10px; border-bottom:1px solid {border}; }}"
+            f"QTableWidget QLineEdit {{ background:{surface}; color:{text}; "
+            f"border:1px solid {accent}; selection-background-color:{accent}; selection-color:{bg}; }}"
+            f"QHeaderView {{ background:transparent; }}"
+            f"QHeaderView::section {{ background:transparent; color:{muted}; border:none; "
+            f"border-bottom:1px solid {border}; padding:10px 10px; font-family:'DM Mono'; "
+            f"font-size:13px; font-weight:600; }}"
+            f"QHeaderView::section:hover {{ color:{text}; }}"
+            f"QTableCornerButton::section {{ background:transparent; border:none; }}"
+        )
+
+    def _dwt_num(self, row):
+        """Leading integer of the DWT/Built value, for numeric sorting (9K before 10K)."""
+        m = re.match(r'(\d+)', (row['labels'][1] or ''))
+        return int(m.group(1)) if m else float('inf')
+
+    def _ordered_rows(self):
+        """Display order: starred rows pinned to the very top, then — until the user sorts —
+        live-listened rows (newest first), then the extracted batch in Zone/DWT order. Once the
+        user clicks a header, everything below the starred rows is sorted by that column."""
+        rows = list(self.table_data)
+        starred = [r for r in rows if r.get('starred')]
+        rest = [r for r in rows if not r.get('starred')]
+        starred.sort(key=lambda r: r.get('seq', 0))
+        if self._sort_col is not None:
+            col = self._sort_col
+            keyf = self._dwt_num if col == 1 else (lambda r: (r['labels'][col] or '').upper())
+            rest.sort(key=keyf, reverse=not self._sort_asc)
+        else:
+            listened = [r for r in rest if r.get('listened')]
+            base = [r for r in rest if not r.get('listened')]
+            listened.sort(key=lambda r: r.get('seq', 0), reverse=True)  # newest pinned on top
+            base.sort(key=lambda r: (
+                'ZZZ' if r.get('zone', '').upper() in ('', 'UNKNOWN') else r.get('zone', '').upper(),
+                self._dwt_num(r)))
+            rest = listened + base
+        return starred + rest
+
+    def _render_main_table(self):
+        """Rebuild the QTableWidget from table_data in the current display order."""
+        if getattr(self, "table", None) is None:
+            return
+        c = getattr(self, "_theme_colors", {})
+        accent = c.get("accent", "#22d3ee"); muted = c.get("muted", "#9b9ba3")
+        mono = QFont("DM Mono")
+        self._populating = True
+        try:
+            ordered = self._ordered_rows()
+            self._visible_rows = ordered
+            self.table.setRowCount(len(ordered))
+            for r, rowd in enumerate(ordered):
+                starred = rowd.get('starred', False)
+                listened = rowd.get('listened', False) and not self._user_sorted
+                star = QTableWidgetItem("★" if starred else "☆")
+                star.setTextAlignment(Qt.AlignCenter)
+                star.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)  # clickable but not editable
+                star.setForeground(QColor(accent if starred else muted))
+                star.setToolTip("Click to star — starred vessels pin to the top")
+                self.table.setItem(r, 0, star)
+                for ci, val in enumerate(rowd['labels']):
+                    item = QTableWidgetItem(val or "")
+                    if ci in (1, 4):  # DWT/Built and Zone use the mono face
+                        item.setFont(mono)
+                    if ci == 4:       # Zone — accent colour
+                        item.setForeground(QColor(accent))
+                    if ci == 0 and listened:
+                        item.setIcon(self._dot_icon)
+                        item.setToolTip("Added via live listening")
+                    self.table.setItem(r, ci + 1, item)
+            self.table.resizeRowsToContents()
+        finally:
+            self._populating = False
+
+    def _on_header_clicked(self, section):
+        if section == 0:
+            return  # star column isn't sortable
+        col = section - 1
         if self._sort_col == col:
             self._sort_asc = not self._sort_asc
         else:
             self._sort_col = col
             self._sort_asc = True
-        self._render_main_table_sorted()
-        self._update_header_arrows()
+        self._user_sorted = True
+        # Sorting alphabetically drops the "new arrival" pinning, so clear the listened markers.
+        for r in self.table_data:
+            r['listened'] = False
+        self._render_main_table()
+        h = self.table.horizontalHeader()
+        h.setSortIndicatorShown(True)
+        h.setSortIndicator(section, Qt.AscendingOrder if self._sort_asc else Qt.DescendingOrder)
 
-    def _update_header_arrows(self):
-        for i, b in enumerate(getattr(self, "_header_btns", [])):
-            base = self._header_texts[i].upper()
-            if i == self._sort_col:
-                b.setText(base + ("  ▲" if self._sort_asc else "  ▼"))
-                b.setStyleSheet(self._header_btn_qss(active=True))
-            else:
-                b.setText(base)
-                b.setStyleSheet(self._header_btn_qss(active=False))
+    def _on_cell_clicked(self, row, col):
+        if col != 0 or row < 0 or row >= len(self._visible_rows):
+            return
+        rowd = self._visible_rows[row]
+        rowd['starred'] = not rowd.get('starred', False)
+        self._render_main_table()
+
+    def _on_item_changed(self, item):
+        if self._populating:
+            return
+        col = item.column()
+        if col == 0:  # star column is not editable
+            return
+        r = item.row()
+        if r < 0 or r >= len(self._visible_rows):
+            return
+        lbl_col = col - 1
+        rowd = self._visible_rows[r]
+        rowd['labels'][lbl_col] = item.text()
+        if lbl_col == 4:  # zone edited — keep the model's zone field in sync for ordering
+            rowd['zone'] = item.text()
+
+    def eventFilter(self, obj, event):
+        """Deselect the current cell on any click that isn't on a valid cell — empty table
+        space or anywhere off the table. App-wide so clicks on non-focusable widgets count."""
+        if event.type() == QEvent.MouseButtonPress:
+            tbl = getattr(self, "table", None)
+            if tbl is not None and tbl.isVisible() and tbl.state() != QAbstractItemView.EditingState:
+                vp = tbl.viewport()
+                local = vp.mapFromGlobal(event.globalPosition().toPoint())
+                inside_cell = vp.rect().contains(local) and tbl.indexAt(local).isValid()
+                if not inside_cell:
+                    tbl.clearSelection()
+        return super().eventFilter(obj, event)
 
     def _set_main_status(self, color, text):
-        self.status.setText(text)
-        self.extbox.setStyleSheet(self._status_box_qss(color))
+        # Guard against the main page being torn down (new extraction / window close)
+        # while a background listen worker is still emitting status updates.
+        try:
+            self.status.setText(text)
+            self.extbox.setStyleSheet(self._status_box_qss(color))
+        except RuntimeError:
+            pass  # underlying C++ widget already deleted
 
     def start_main_listening(self):
         """Continue listening within the main extraction view, feeding new vessels into
@@ -1701,24 +1805,37 @@ class MainWindow(QMainWindow):
             return
         try:
             zone, labels = self._row_from_email(email_data)
-            self.table_data.append({'zone': zone, 'labels': labels, 'listened': True})
-            self._render_main_table_sorted()
+            self._seq_counter += 1
+            # listened=True pins it to the top (newest first) until the user sorts a column.
+            self.table_data.append({
+                'zone': zone, 'labels': labels,
+                'listened': True, 'starred': False, 'seq': self._seq_counter,
+            })
+            self._render_main_table()
             self.caption5.setText(f"{t('vessels_extracted', self.language)} {len(self.table_data)}")
         except Exception as e:
             print(f"Error adding listened email to table: {e}")
 
     def on_main_listen_done(self):
+        self.listening_running = False
+        # The main page (and its status widgets) may have been torn down — e.g. the user
+        # started a new extraction or closed the window — while this worker was finishing.
+        # In that case there's nothing to update; bail before touching deleted widgets.
+        if self.page_main is None:
+            return
         err = getattr(self.listen_worker, "api_error_key", None)
         limit = getattr(self.listen_worker, "limit_reached", False)
-        self.listening_running = False
-        if limit:
-            self.show_upgrade_dialog()
-            self._set_main_status("#22d3ee", t("limit_reached_title", self.language))
-        elif err:
-            self._set_main_status("#f87171", t(err, self.language))
-        else:
-            self._set_main_status("#f59e0b", t("listening_paused", self.language))
-        self.continue_listen_btn.setText(t("resume_listen", self.language))
+        try:
+            if limit:
+                self.show_upgrade_dialog()
+                self._set_main_status("#22d3ee", t("limit_reached_title", self.language))
+            elif err:
+                self._set_main_status("#f87171", t(err, self.language))
+            else:
+                self._set_main_status("#f59e0b", t("listening_paused", self.language))
+            self.continue_listen_btn.setText(t("resume_listen", self.language))
+        except RuntimeError:
+            pass  # underlying C++ widgets already deleted mid-teardown
 
     def toggle_main_listening(self):
         if self.listening_running:
@@ -1761,17 +1878,15 @@ class MainWindow(QMainWindow):
         elif not self.table_data:
             self.extheader.setText(t("extraction_complete_none", self.language))
             self.extheader.setStyleSheet("font: bold 25px;")
-            no_results = QLabel(t("no_vessels", self.language))
-            no_results.setStyleSheet("font: normal 17px; color: grey;")
-            self.grid.addWidget(no_results, 1, 0, 1, 3)
+            self.table.setRowCount(0)
             self.status.setText(t("extraction_stopped", self.language))
             self.extbox.setStyleSheet(self._status_box_qss("#f87171"))
         else:
             self.extheader.setText(t("extraction_complete", self.language))
             self.extheader.setStyleSheet("font: bold 25px;")
-            self._render_main_table_sorted()
+            self._render_main_table()
             # Bake listening into this same view — keep the extracted vessels on screen and
-            # keep listening for new arrivals, inserting them in sorted order (no window switch).
+            # keep listening for new arrivals, pinning them to the top (no window switch).
             self.start_main_listening()
 
         self.btn.setEnabled(True)
