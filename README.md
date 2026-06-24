@@ -33,20 +33,6 @@ Mail AI connects to your Outlook inbox and uses GPT to automatically extract ves
 
 ---
 
-## Outlook Trust Center
-
-If Outlook shows a security warning when Mail AI tries to access your emails:
-
-1. Close Outlook
-2. Right-click the Outlook icon → **Run as Administrator**
-3. Go to **File → Options → Trust Center → Trust Center Settings → Programmatic Access**
-4. Select **Never warn me about suspicious activity**
-5. Restart Outlook normally
-
-If the option is greyed out, your machine may be managed by an IT administrator — ask them to whitelist Mail AI or adjust the Programmatic Access group policy.
-
----
-
 ## Licence
 
 MIT — see [LICENSE](LICENSE)
