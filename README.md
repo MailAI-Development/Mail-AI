@@ -64,3 +64,13 @@ v1.3 - What's new:
 - **Freemium model introduced** - Mail AI is now free for up to **200 email extractions per month**
 - Pro tier - **Unlimited extractions** for **£9/month** via Ko-fi (enter your monthly license key in Settings to activate)
 - Privacy page at mailai.uk/privacy, which documents exactly what the app accesses, what gets sent to OpenAI, and what stays on your machine
+
+v1.4 - What's new:
+- Design overhaul of the app and website, with improved clarity of the interface overall
+- Auto updating: all application versions from now on will have an auto-update from the app natively, with no need to reinstall
+- Listening is auto-triggered after extraction ends
+- Extraction table has been reordered to suitably prioritise important details
+- Column ordering from A-Z is now integrated into the main extraction table; press column headings to order from A-Z or Z-A
+- Newly listened emails now have a marker and are pinned to the top
+- Important emails can now be starred and pinned to the top
+- Each cell of the extraction table can be fully edited if data is not accurate
