@@ -74,3 +74,7 @@ v1.4 - What's new:
 - Newly listened emails now have a marker and are pinned to the top
 - Important emails can now be starred and pinned to the top
 - Each cell of the extraction table can be fully edited if data is not accurate
+- Dropdowns for email address, folder, date and time for a better user experience
+- Light/dark mode refined + fixed
+- Fixed a bug where deduplication of vessels would persist over multiple days
+- Fixed a bug where valid vessels would be dropped
