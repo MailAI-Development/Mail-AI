@@ -18,7 +18,7 @@ import hmac as _hmac
 import hashlib
 import base64
 try:
-    import winreg  # Windows-only; used to persist trial start outside the app folder
+    import winreg
 except ImportError:
     winreg = None
 
@@ -328,7 +328,6 @@ _COUNTRY_ZONE = {
     'PK': 'WCI', 'LK': 'ECI', 'BD': 'ECI', 'MV': 'WCI',
     'RU': 'CIS',
     'FR': 'MED',
-    # --- additional coastal countries (single dominant zone) ---
     'GI': 'MED', 'MC': 'MED', 'BA': 'MED', 'SY': 'MED', 'PS': 'MED',
     'FO': 'CONTI', 'GL': 'CONTI', 'AX': 'BALTIC',
     'GM': 'WAFC', 'SH': 'WAFC',
@@ -356,14 +355,12 @@ _IN_STATE_ZONE = {
     'WB': 'ECI', 'OD': 'ECI', 'OR': 'ECI', 'AP': 'ECI', 'TN': 'ECI', 'PY': 'ECI',
 }
 
-# Canada (2-letter province codes): Pacific vs Atlantic/Lakes.
 _CA_STATE_ZONE = {
     'BC': 'USWC',
     'ON': 'USEC', 'QC': 'USEC', 'NL': 'USEC', 'NS': 'USEC',
     'NB': 'USEC', 'PE': 'USEC', 'MB': 'USEC',
 }
 
-# Mexico (3-letter state codes): Pacific vs Gulf vs Caribbean.
 _MX_STATE_ZONE = {
     'BCN': 'WCCA', 'BCS': 'WCCA', 'SON': 'WCCA', 'SIN': 'WCCA', 'NAY': 'WCCA',
     'JAL': 'WCCA', 'COL': 'WCCA', 'MIC': 'WCCA', 'GRO': 'WCCA', 'OAX': 'WCCA',
@@ -372,9 +369,7 @@ _MX_STATE_ZONE = {
     'ROO': 'CARRIBEAN',
 }
 
-# Regional / broker shorthand → zone (unambiguous only; ambiguous terms left to log).
 _REGION_ALIAS = {
-    # --- broker shorthand / ranges ---
     'CJK': 'FE', 'FAR EAST': 'FE', 'F EAST': 'FE',
     'CJK-JP RANGE': 'FE', 'CJK-JAPAN RANGE': 'FE', 'CJK-JP': 'FE',
     'CJK-N.CHIAN RANGE': 'FE', 'CJK-N.CHINA RANGE': 'FE', 'NORTH OF CJK': 'FE',
@@ -391,7 +386,6 @@ _REGION_ALIAS = {
     'ECI RANGE': 'ECI', 'WCI RANGE': 'WCI',
     'W. AFR ORDER': 'WAFC', 'W AFR': 'WAFC', 'W.AFR': 'WAFC', 'WEST AFRICA': 'WAFC',
     'AQABA': 'RED SEA', 'SIERRA LEONE': 'WAFC',
-    # --- alternate / historical / transliterated port names ---
     'HOCHIMINH': 'SEAS', 'RANGOON': 'SEAS', 'MELAKA': 'SEAS',
     'KELANG': 'SEAS', 'PORT KELANG': 'SEAS', 'PORT KLANG': 'SEAS', 'KUANTAN': 'SEAS',
     'FUJARIAH': 'PG',
@@ -417,7 +411,6 @@ def load_unlocode_dict():
                 name = row[4].strip().upper()
                 subdivision = row[5].strip().upper() if len(row) > 5 else ''
                 func = row[6].strip()
-                # Only seaports (function code starts with '1')
                 if not func or func[0] != '1':
                     continue
                 if not name or not country:
@@ -441,14 +434,14 @@ def load_csv_into_dict(csv_file):
     mapping = {}
     with open(csv_file, mode="r", encoding="latin-1") as f:
         reader = csv.reader(f)
-        next(reader, None)  # skip header if present
+        next(reader, None)
         for row in reader:
-            if len(row) >= 2:  # avoid malformed lines
+            if len(row) >= 2:
                 key = row[0].strip().upper()
                 value = row[1].strip()
                 if key not in mapping:
                     mapping[key] = []
-                if value not in mapping[key]:  # avoid duplicates
+                if value not in mapping[key]:
                     mapping[key].append(value)
     return mapping
 
@@ -510,7 +503,6 @@ _PORT_NOISE = re.compile(
 def _normalize_port(name):
     """Strip common prefixes/suffixes that obscure the core port name."""
     name = name.strip().upper()
-    # Remove leading noise words iteratively (e.g. "PORT OF OUTER HAMBURG" → "HAMBURG")
     prev = None
     while prev != name:
         prev = name
@@ -524,54 +516,39 @@ _ZONE_CODES = {
 }
 
 _COUNTRY_NAME_ZONE = {
-    # Far East
     'CHINA': 'FE', 'JAPAN': 'FE', 'SOUTH KOREA': 'FE', 'KOREA': 'FE',
     'TAIWAN': 'FE', 'HONG KONG': 'FE', 'NORTH KOREA': 'FE',
-    # South East Asia
     'SINGAPORE': 'SEAS', 'MALAYSIA': 'SEAS', 'INDONESIA': 'SEAS',
     'PHILIPPINES': 'SEAS', 'VIETNAM': 'SEAS', 'THAILAND': 'SEAS',
     'MYANMAR': 'SEAS', 'CAMBODIA': 'SEAS', 'BRUNEI': 'SEAS',
-    # India (ambiguous — skip, brokers use WCI/ECI directly)
-    # Persian Gulf
     'UAE': 'PG', 'UNITED ARAB EMIRATES': 'PG', 'SAUDI ARABIA': 'PG',
     'KUWAIT': 'PG', 'IRAQ': 'PG', 'IRAN': 'PG', 'QATAR': 'PG',
     'BAHRAIN': 'PG', 'OMAN': 'PG',
-    # Mediterranean
     'ITALY': 'MED', 'GREECE': 'MED', 'SPAIN': 'MED', 'TURKEY': 'MED',
     'FRANCE': 'MED', 'CROATIA': 'MED', 'EGYPT': 'MED', 'LIBYA': 'MED',
     'TUNISIA': 'MED', 'ALGERIA': 'MED', 'MOROCCO': 'MED', 'ISRAEL': 'MED',
     'LEBANON': 'MED', 'CYPRUS': 'MED', 'MALTA': 'MED',
-    # Continent
     'NETHERLANDS': 'CONTI', 'HOLLAND': 'CONTI', 'BELGIUM': 'CONTI',
     'GERMANY': 'CONTI', 'UK': 'CONTI', 'UNITED KINGDOM': 'CONTI',
     'NORWAY': 'CONTI', 'PORTUGAL': 'CONTI',
-    # Baltic
     'FINLAND': 'BALTIC', 'SWEDEN': 'BALTIC', 'DENMARK': 'BALTIC',
     'POLAND': 'BALTIC', 'ESTONIA': 'BALTIC', 'LATVIA': 'BALTIC', 'LITHUANIA': 'BALTIC',
-    # Black Sea
     'UKRAINE': 'BSEA', 'ROMANIA': 'BSEA', 'BULGARIA': 'BSEA', 'GEORGIA': 'BSEA',
-    # CIS
     'RUSSIA': 'CIS', 'KAZAKHSTAN': 'CIS',
-    # Red Sea
     'SUDAN': 'RED SEA', 'YEMEN': 'RED SEA', 'DJIBOUTI': 'RED SEA',
     'JORDAN': 'RED SEA', 'ERITREA': 'RED SEA',
-    # East/South Africa
     'KENYA': 'EAFC', 'TANZANIA': 'EAFC', 'MOZAMBIQUE': 'EAFC',
     'MADAGASCAR': 'EAFC', 'SOMALIA': 'EAFC',
     'SOUTH AFRICA': 'SAFC', 'NAMIBIA': 'SAFC',
-    # West Africa
     'NIGERIA': 'WAFC', 'GHANA': 'WAFC', 'IVORY COAST': 'WAFC',
     'COTE D\'IVOIRE': 'WAFC', 'CAMEROON': 'WAFC', 'ANGOLA': 'WAFC',
     'SENEGAL': 'WAFC', 'TOGO': 'WAFC', 'GABON': 'WAFC',
-    # Australia
     'AUSTRALIA': 'AUS', 'NEW ZEALAND': 'AUS',
-    # Americas
     'BRAZIL': 'ECSA', 'ARGENTINA': 'ECSA', 'URUGUAY': 'ECSA',
     'CHILE': 'WCSA', 'PERU': 'WCSA',
     'COLOMBIA': 'NCSA', 'VENEZUELA': 'NCSA',
     'MEXICO': 'WCCA', 'PANAMA': 'WCCA', 'GUATEMALA': 'WCCA',
     'CUBA': 'CARRIBEAN', 'JAMAICA': 'CARRIBEAN',
-    # US (ambiguous — skip, brokers use USEC/USG/USWC directly)
 }
 
 _collapsed_index_cache = {}
@@ -608,15 +585,12 @@ def lookup_value(input_text, mapping):
     normalized = _normalize_port(input_text)
     candidates = [input_text] if input_text == normalized else [input_text, normalized]
 
-    # Exact port match — return only if it resolves to a single unambiguous zone.
     for candidate in candidates:
         if candidate in mapping:
             zones = set(mapping[candidate])
             if len(zones) == 1:
                 return next(iter(zones))
-            # Multiple zones for one name (shared port name) — ambiguous, abstain.
 
-    # Substring match — word-boundary only, keys >= 5 chars, single distinct zone only.
     for candidate in candidates:
         matched_zones = set()
         for key, zones in mapping.items():
@@ -628,9 +602,7 @@ def lookup_value(input_text, mapping):
                 matched_zones.update(zones)
         if len(matched_zones) == 1:
             return next(iter(matched_zones))
-        # Zero matches → try next candidate; multiple distinct zones → ambiguous, abstain.
 
-    # Space/punctuation-insensitive match — e.g. "HOCHIMINH" -> "HO CHI MINH CITY".
     collapsed_index = _get_collapsed_index(mapping)
     for candidate in candidates:
         cc = _collapse_name(candidate)
@@ -639,8 +611,6 @@ def lookup_value(input_text, mapping):
         exact = collapsed_index.get(cc)
         if exact and len(exact) == 1:
             return next(iter(exact))
-        # Only candidate-is-substring-of-key (a shorter form of a fuller port name);
-        # the reverse direction matches port names inside garbage strings, so it's excluded.
         matched = set()
         for ck, zones in collapsed_index.items():
             if cc in ck:
@@ -650,7 +620,6 @@ def lookup_value(input_text, mapping):
         if len(matched) == 1:
             return next(iter(matched))
 
-    # Fuzzy match — accept only when unambiguous or a clear margin over a differing zone.
     for candidate in candidates:
         matches = difflib.get_close_matches(candidate, mapping.keys(), n=3, cutoff=0.88)
         if not matches:
@@ -658,17 +627,15 @@ def lookup_value(input_text, mapping):
         best = matches[0]
         best_zones = set(mapping[best])
         if len(best_zones) != 1:
-            continue  # best match itself ambiguous
+            continue
         best_zone = next(iter(best_zones))
-        # Find the highest-ranked candidate that maps to a different zone.
         differing = next((m for m in matches if set(mapping[m]) != {best_zone}), None)
         if differing is None:
-            return best_zone  # all close matches agree on the same zone
+            return best_zone
         best_ratio = difflib.SequenceMatcher(None, candidate, best).ratio()
         diff_ratio = difflib.SequenceMatcher(None, candidate, differing).ratio()
         if best_ratio - diff_ratio >= 0.05:
             return best_zone
-        # Near-tie across different zones — ambiguous, abstain.
 
     try:
         with open(data_path("zone_misses.log"), "a", encoding="utf-8") as f:
@@ -682,7 +649,6 @@ def is_relevant_email(email_subject, email_body):
     for keyword in keywords:
         if re.search(r'\b' + re.escape(keyword) + r'\b', email_subject, re.IGNORECASE):
             return True
-    # only check body if subject didn't match, to avoid scanning long emails
     first_100_lines = '\n'.join(email_body.splitlines()[:100])
     for keyword in keywords:
         if re.search(r'\b' + re.escape(keyword) + r'\b', first_100_lines, re.IGNORECASE):
@@ -692,9 +658,7 @@ def is_relevant_email(email_subject, email_body):
 def get_first_n_lines(email_body):
     noise_patterns = re.compile(
         r'(?i)^('
-        # quoted replies
         r'(>\s*)'
-        # legal / email footer boilerplate
         r'|.*confidential.*'
         r'|.*disclaimer.*'
         r'|.*unsubscribe.*'
@@ -703,13 +667,11 @@ def get_first_n_lines(email_body):
         r'|.*sincerely.*|.*yours faithfully.*'
         r'|\s*sent from .*'
         r'|\s*get outlook for .*'
-        # separator lines
         r'|-{3,}.*forwarded.*-{3,}'
         r'|-{5,}$'
         r'|_{5,}$'
         r'|={5,}$'
         r'|\*{5,}$'
-        # bunker specs
         r'|.*\bLSFO\b.*\bISO\b.*'
         r'|.*\bMGO\b.*\bISO\b.*'
         r'|.*\bLSMGO\b.*\bISO\b.*'
@@ -721,7 +683,6 @@ def get_first_n_lines(email_body):
         r'|.*mixing of bunkers.*'
         r'|.*charterers.*warrant.*'
         r'|.*iso\s*8217.*'
-        # speed / consumption tables
         r'|.*\bspeed\b.*\bcons\b.*'
         r'|.*abt\s+\d+.*knot.*'
         r'|.*\bbeaufort\b.*'
@@ -737,7 +698,6 @@ def get_first_n_lines(email_body):
         r'|.*liberty of using.*'
         r'|.*maneuvering.*'
         r'|.*maintenance works.*'
-        # vessel particulars / tech specs
         r'|.*\bimo no\b.*'
         r'|.*\bcall sign\b.*'
         r'|.*port of registry.*'
@@ -758,30 +718,24 @@ def get_first_n_lines(email_body):
         r'|.*radio remote control.*'
         r'|.*\bport idle\b.*'
         r'|.*\bport working\b.*'
-        # last cargo / port history
         r'|.*last (five|ten|five|3|5|10)\s*(cargo|port).*'
         r'|.*last \d+\s*(cargo|port).*'
         r'|.*bunker on delivery.*'
         r'|.*buker on delivery.*'
         r'|all (above|details).*'
-        # loadline / draft tables (never in summaries)
         r'|.*\bSSW\b.*'
         r'|.*\b(WINTER|SUMMER|TROPICAL)\b.*\bDWT\b.*'
         r'|.*\bDWT\b.*\bTPC\b.*'
         r'|.*\bTPC\b.*\bDRAFT\b.*'
         r'|.*\bDRAFT\b.*\bTPC\b.*'
-        # fuel consumption lines
         r'|.*\bVLSFO\b.*\bLSMGO\b.*'
         r'|.*\bLSFO\b.*\bLSMGO\b.*'
         r'|.*\bMDO\b.*\bLSFO\b.*'
-        # speed lines using K (knots abbrev) alongside a fuel type — e.g. "ABT 13K ON LSFO ABT 25MT"
         r'|.*\b\d+\s*k\b.*\b(lsfo|vlsfo|lsmgo|mgo)\b.*'
-        # vessel registry / class
         r'|.*\bimo\b.*\b\d{7}\b.*'
         r'|.*\bimo number\b.*'
         r'|.*\bclass\b.*\b(BV|DNV|LR|ABS|NK|GL|CCS|RINA|KR)\b.*'
         r'|.*\bbuilt\b.*\bflag\b.*'
-        # hold / capacity lines
         r'|.*\bgrain\b.*\bbale\b.*\bcbm\b.*'
         r'|.*\ball details about\b.*'
         r')'
@@ -797,7 +751,6 @@ def get_first_n_lines(email_body):
         r')'
     )
 
-    # Clean lines, tracking original indices
     cleaned = []
     for line in email_body.splitlines():
         stripped = line.strip()
@@ -806,7 +759,6 @@ def get_first_n_lines(email_body):
         else:
             cleaned.append(stripped)
 
-    # Mark relevant line indices, then expand by 1 context line each side
     relevant_indices = set()
     for i, line in enumerate(cleaned):
         if line and relevant.search(line):
@@ -836,7 +788,7 @@ def get_first_n_lines(email_body):
         if m:
             name_key = ' '.join(m.group(1).strip().upper().split())
             if name_key in seen_vessels and not has_summary_context.search(line):
-                continue  # repeated vessel name with no new open/date info
+                continue
             seen_vessels.add(name_key)
         deduped.append(line)
     result = deduped
@@ -866,6 +818,7 @@ def extract_details_from_email(preprocessed_body, csv_dict):
             f"A vessel's details may span multiple lines.\n"
             f"Return None for any field that is missing.\n"
             f"Before moving on to the next vessel, separate each vessel with '---'.\n"
+            f"It is crucial that no vessels are missed."
             f"Email:\n{preprocessed_body}\n\n"},
         ]
     }
@@ -884,13 +837,12 @@ def extract_details_from_email(preprocessed_body, csv_dict):
                 "https://api.openai.com/v1/chat/completions",
                 json=api_payload,
                 headers=headers,
-                timeout=(10, 45),  # (connect, read) — bounds a stalled call instead of hanging
+                timeout=(10, 45),
             )
             resp.raise_for_status()
             data = resp.json()
             break
         except (requests.exceptions.RequestException, ValueError) as e:
-            # ValueError covers json.JSONDecodeError (non-JSON body from a proxy/gateway error)
             last_error = e
             logger.warning(f"API request failed (attempt {attempt + 1}/3): {e}")
             if attempt < 2:
@@ -996,8 +948,6 @@ def save_email_ids():
 
 
 
-# Trial start is mirrored across three stores so deleting one (or reinstalling to a
-# new folder) does not reset the trial. The effective start is the EARLIEST seen anywhere.
 _TRIAL_REG_PATH = r"Software\MailAI"
 _TRIAL_APPDATA_FILE = os.path.join(
     os.environ.get("LOCALAPPDATA") or os.path.expanduser("~"), "MailAI", "trial.dat"
@@ -1058,7 +1008,6 @@ def refresh_access_state():
 
     earliest = _earliest_trial_start()
     earliest_str = (earliest or datetime.now()).strftime("%Y-%m-%d")
-    # Propagate the earliest date to every store so removing one can't reset the trial.
     if config.get("trial_start") != earliest_str:
         config["trial_start"] = earliest_str
         changed = True
@@ -1096,7 +1045,6 @@ def access_allowed():
     return is_pro_active() or trial_active()
 
 
-# ── Auto-update (via GitHub Releases) ───────────────────────────────
 def _parse_version(v):
     v = (v or "").strip().lstrip("vV")
     parts = []
@@ -1180,11 +1128,11 @@ def apply_update():
             os.remove(old_path)
         except OSError:
             pass
-    os.rename(exe, old_path)      # Windows allows renaming a running exe
-    os.rename(new_path, exe)      # move the freshly downloaded exe into place
+    os.rename(exe, old_path)
+    os.rename(new_path, exe)
 
     import subprocess
-    subprocess.Popen([exe])      # launch the new version; caller then exits
+    subprocess.Popen([exe])
 
 
 def validate_license_key(key: str) -> bool:
@@ -1215,8 +1163,8 @@ def validate(date, time_str, email_address, folder, excel_path, outlook, languag
         if not date:
             date = str(datetime.now(pytz.UTC).date())
         if not time_str:
-            time_str = "12:00 AM"
-        sp_datetime = datetime.strptime(f"{date} {time_str}", '%Y-%m-%d %I:%M %p')
+            time_str = "00:00"
+        sp_datetime = datetime.strptime(f"{date} {time_str}", '%Y-%m-%d %H:%M')
 
         specific_datetime = sp_datetime.replace(tzinfo=pytz.UTC)
         if specific_datetime > datetime.now(pytz.UTC):
@@ -1256,7 +1204,7 @@ def append_data_excel(file_path, data, specific_datetime, listening, run_header=
     today = datetime.now().date()
     sheet_name = today.strftime("%d %b %Y")
 
-    fresh_sheet = False  # did we just create the sheet (so it already starts with a header)?
+    fresh_sheet = False
     if not os.path.exists(file_path):
         workbook = openpyxl.Workbook()
         sheet = workbook.active
@@ -1277,9 +1225,6 @@ def append_data_excel(file_path, data, specific_datetime, listening, run_header=
             sheet.auto_filter.ref = "A1:H1"
             fresh_sheet = True
 
-    # A new extraction run appended into an already-populated sheet gets its own header
-    # row, so each run's block is labelled. (A freshly-created sheet already starts with
-    # one, and the per-email listening appends pass run_header=False so they flow under it.)
     if run_header and not fresh_sheet and sheet.max_row >= 1:
         sheet.append(headers)
 
@@ -1302,7 +1247,6 @@ def append_data_excel(file_path, data, specific_datetime, listening, run_header=
         ]
         sheet.append(row)
 
-    # Apply autofilter across the full used range (8 columns A–H).
     if sheet.max_row >= 1:
         sheet.auto_filter.ref = f"A1:H{sheet.max_row}"
 
@@ -1311,30 +1255,25 @@ def append_data_excel(file_path, data, specific_datetime, listening, run_header=
 
 
 def append_error_message(file_path, sender_email, email_subject, worker=None):
-    # Bounded, stoppable wait for Excel to close — never block the worker thread forever.
     waited = 0
     while is_excel_open(file_path):
         if worker is not None and not worker.running:
             return
         time.sleep(2)
         waited += 2
-        if waited >= 300:  # give up after ~5 min rather than hang
+        if waited >= 300:
             logger.error("Excel locked > 5 min — skipping error-message write")
             return
 
-    # Check if the Excel file exists
     if not os.path.exists(file_path):
         workbook = openpyxl.Workbook()
         sheet = workbook.active
     else:
-        # Open the existing workbook
         workbook = openpyxl.load_workbook(file_path)
         sheet = workbook.active
 
-    # Prepare the message to append
     error_message = f"Data not found: Email sender: {sender_email}, Email subject: {email_subject}"
 
-    # Append the error message in a new row
     sheet.append([error_message])
 
     workbook.save(file_path)
@@ -1419,13 +1358,13 @@ def validate_date(date_str):
     date_str = normalise_date(date_str)
     months = r'(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)'
     valid_patterns = [
-        rf'^\d{{1,2}}\s+{months}$',                                                      # 10 OCT
-        rf'^\d{{1,2}}-\d{{1,2}}\s+{months}$',                                            # 20-22 NOV
-        rf'^\d{{1,2}}/\d{{1,2}}\s+{months}$',                                            # 10/11 OCT
-        rf'^\d{{1,2}}\s+{months}\s*[-/]\s*\d{{1,2}}\s+{months}$',                       # 30 JUN - 2 JUL / 30 JUN / 2 JUL
-        rf'^{months}\s+\d{{1,2}}$',                                                      # OCT 10
-        rf'^(?:EARLY|MID|LATE|END)\s+{months}$',                                         # EARLY OCT
-        rf'^(?:EARLY|MID|LATE|END)\s+{months}\s*/\s*(?:EARLY|MID|LATE|END)\s+{months}$', # LATE MAR / EARLY APR
+        rf'^\d{{1,2}}\s+{months}$',
+        rf'^\d{{1,2}}-\d{{1,2}}\s+{months}$',
+        rf'^\d{{1,2}}/\d{{1,2}}\s+{months}$',
+        rf'^\d{{1,2}}\s+{months}\s*[-/]\s*\d{{1,2}}\s+{months}$',
+        rf'^{months}\s+\d{{1,2}}$',
+        rf'^(?:EARLY|MID|LATE|END)\s+{months}$',
+        rf'^(?:EARLY|MID|LATE|END)\s+{months}\s*/\s*(?:EARLY|MID|LATE|END)\s+{months}$',
     ]
     for pattern in valid_patterns:
         if re.match(pattern, date_str):
@@ -1433,11 +1372,14 @@ def validate_date(date_str):
     return date_str
 
 def is_valid_vessel(vessel):
-    return (
-        vessel.get('MV') not in (None, 'None') and
-        vessel.get('Vessel Open Location') not in (None, 'None') and
-        '->' not in str(vessel.get('Vessel Open Location', ''))
-    )
+    # Keep a vessel if it has a name plus at least one useful detail; drop name-only fragments.
+    # A '->' open location is a mis-parsed route/cargo line, so that still rejects the vessel.
+    if vessel.get('MV') in (None, 'None'):
+        return False
+    if '->' in str(vessel.get('Vessel Open Location') or ''):
+        return False
+    detail_fields = ('Vessel Open Location', 'Vessel Open Date', 'Deadweight', 'Build Year')
+    return any(vessel.get(k) not in (None, 'None', '') for k in detail_fields)
 
 def detect_duplicates(details):
     global existing_vessels
@@ -1471,7 +1413,21 @@ def delete_duplicates():
     global existing_vessels
     existing_vessels = {}
     with open(duplicates_file, "w", encoding="utf-8") as f:
-        json.dump({}, f)  # empty dict
+        json.dump({}, f)
+
+
+def clear_duplicates_if_new_day():
+    """Reset the duplicate cache once per calendar day so re-sent tonnage lists reappear on
+    each day's sheet. Within a day the cache persists (same-day re-runs still avoid dupes)."""
+    try:
+        today = datetime.now().date().isoformat()
+        cfg = load_config()
+        if cfg.get("duplicates_cleared_date") != today:
+            delete_duplicates()
+            cfg["duplicates_cleared_date"] = today
+            save_config(cfg)
+    except Exception as e:
+        logger.warning(f"Daily duplicate reset skipped: {e}")
 
 
 def process_email(email_address,folder,excel_path,csv_dict,worker):
@@ -1495,16 +1451,15 @@ def process_email(email_address,folder,excel_path,csv_dict,worker):
             return
 
         store_id = folder.StoreID
-        api_failures = 0  # consecutive API failures (circuit breaker for a real outage)
+        api_failures = 0
 
         while True:
             if not worker.running:
                 return
 
             refresh_access_state()
+            clear_duplicates_if_new_day()
 
-            # Phase 1 — snapshot new (unseen) EntryIDs quickly, without holding the live
-            # enumerator across the slow per-email work below.
             entry_ids = []
             try:
                 messages = folder.Items
@@ -1529,8 +1484,7 @@ def process_email(email_address,folder,excel_path,csv_dict,worker):
             except Exception as e:
                 logger.warning(f"Listen snapshot interrupted ({e})")
 
-            # Phase 2 — process each from a fresh item handle; one failure skips, not aborts.
-            for entry_id in reversed(entry_ids):  # oldest-first, matching arrival order
+            for entry_id in reversed(entry_ids):
                 if not worker.running:
                     return
                 try:
@@ -1541,7 +1495,7 @@ def process_email(email_address,folder,excel_path,csv_dict,worker):
                     sender_email = message.SenderEmailAddress
                 except Exception as e:
                     logger.warning(f"Skipping email (fetch failed): {e}")
-                    continue  # don't mark seen — retry next cycle
+                    continue
 
                 with _email_ids_lock:
                     email_ids.add(entry_id)
@@ -1561,7 +1515,7 @@ def process_email(email_address,folder,excel_path,csv_dict,worker):
                                 limit_hit = True
                             else:
                                 extracted_details = extract_details_from_email(preprocessed_body, csv_dict)
-                                api_failures = 0  # a call succeeded → reset breaker
+                                api_failures = 0
                                 valid_vessels = filter_data(extracted_details)
                                 vessels = detect_duplicates(valid_vessels)
                                 if vessels:
@@ -1634,10 +1588,8 @@ def night_extraction(specific_datetime, email_address, folder, excel_path, csv_d
 
         store_id = folder.StoreID
         refresh_access_state()
+        clear_duplicates_if_new_day()
 
-        # Phase 1 — snapshot relevant EntryIDs quickly (no API calls; minimal time holding
-        # the live COM enumerator, so incoming mail / a dropped connection can't break us
-        # mid-run the way iterating across slow OpenAI calls did).
         entry_ids = []
         try:
             messages = folder.Items
@@ -1658,11 +1610,9 @@ def night_extraction(specific_datetime, email_address, folder, excel_path, csv_d
         except Exception as e:
             logger.warning(f"Snapshot interrupted ({e}); proceeding with {len(entry_ids)} emails collected")
 
-        # Phase 2 — process each from a fresh item handle. A failure on one email skips it
-        # rather than aborting the whole run.
         processed_emails = []
         ves = 0
-        api_failures = 0  # consecutive API failures (circuit breaker for a real outage)
+        api_failures = 0
         for entry_id in entry_ids:
             if not worker.running:
                 return
@@ -1689,7 +1639,7 @@ def night_extraction(specific_datetime, email_address, folder, excel_path, csv_d
                     limit_hit = True
                 else:
                     extracted_details = extract_details_from_email(preprocessed_body, csv_dict)
-                    api_failures = 0  # a call succeeded → reset breaker
+                    api_failures = 0
                     valid_vessels = filter_data(extracted_details)
                     vessels = detect_duplicates(valid_vessels)
                     if vessels:
@@ -1733,7 +1683,7 @@ def night_extraction(specific_datetime, email_address, folder, excel_path, csv_d
                         return
                     time.sleep(2)
                     waited += 2
-                    if waited >= 300:  # give up after ~5 min rather than hang forever
+                    if waited >= 300:
                         logger.error("Excel file still locked after 5 min — aborting write")
                         yield {"type": "api_error", "error_key": "proxy_error_generic"}
                         return

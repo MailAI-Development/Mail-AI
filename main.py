@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (
     QHeaderView, QAbstractItemView
 )
 from PySide6.QtGui import (
-    QFontDatabase, QFont, QColor, QPalette, QIcon, QDesktopServices, QPixmap, QPainter
+    QFontDatabase, QFont, QColor, QPalette, QIcon, QDesktopServices
 )
 from PySide6.QtCore import Qt, QObject, Signal, Slot, QThread, QTimer, QUrl, QEvent
 
@@ -23,6 +23,49 @@ try:
 except Exception as e:
     outlook = None
 
+
+def list_outlook_accounts():
+    """Top-level Outlook accounts (mailbox / store names) available via local Outlook."""
+    if outlook is None:
+        return []
+    try:
+        return [f.Name for f in outlook.Folders]
+    except Exception:
+        return []
+
+
+def list_outlook_folders(account_name):
+    """Direct subfolders of the given account — matches how extraction selects a folder."""
+    if outlook is None or not account_name:
+        return []
+    try:
+        for acct in outlook.Folders:
+            if acct.Name.strip().upper() == account_name.strip().upper():
+                return [sf.Name for sf in acct.Folders]
+    except Exception:
+        pass
+    return []
+
+
+def fill_combo(combo, options, current):
+    """Populate an (editable) combo with options, preserving/selecting `current`."""
+    combo.blockSignals(True)
+    combo.clear()
+    current = (current or "").strip()
+    if current and current not in options:
+        combo.addItem(current)
+    combo.addItems(options)
+    idx = combo.findText(current)
+    if idx >= 0:
+        combo.setCurrentIndex(idx)
+    else:
+        combo.setEditText(current)
+    combo.blockSignals(False)
+
+
+MONTH_NAMES = ["January", "February", "March", "April", "May", "June",
+               "July", "August", "September", "October", "November", "December"]
+
 csv_file = resource_path("WPIUpdated.csv")
 if not os.path.exists(csv_file):
     QMessageBox.critical(None, "Missing Resource", f"Required file not found: WPI.csv\nPlease reinstall the application.")
@@ -33,8 +76,6 @@ for _k, _v in _unlocode.items():
     if _k not in csv_dict:
         csv_dict[_k] = _v
     elif len(set(csv_dict[_k])) > 1 and len(set(_v)) == 1:
-        # WPI has conflicting zones for this name (homonym); defer to UN/LOCODE's
-        # authoritative country-derived single zone.
         csv_dict[_k] = _v
 
 class ExtractWorker(QObject):
@@ -93,20 +134,24 @@ class UpdateWorker(QObject):
             self.done.emit(False, str(e))
 
 
-def get_font(language):
+_INTER_FAMILY = None
 
-    QFontDatabase.addApplicationFont(resource_path("DM_Mono/DMMono-Regular.ttf"))
-    QFontDatabase.addApplicationFont(resource_path("DM_Mono/DMMono-Medium.ttf"))
+def get_font(language):
+    """UI font: Inter for everything. Chinese uses Source Han Sans. Registers the bundled
+    families once and caches Inter's family name."""
+    global _INTER_FAMILY
+    if _INTER_FAMILY is None:
+        fid = QFontDatabase.addApplicationFont(resource_path("Inter/Inter-VariableFont.ttf"))
+        fams = QFontDatabase.applicationFontFamilies(fid) if fid != -1 else []
+        _INTER_FAMILY = fams[0] if fams else "Segoe UI"
 
     if language == "中文":
         font_id = QFontDatabase.addApplicationFont(resource_path("SourceHanSansSC-Regular.otf"))
-    else:
-        font_id = QFontDatabase.addApplicationFont(resource_path("Syne/Syne-VariableFont_wght.ttf"))
+        if font_id != -1:
+            return QFont(QFontDatabase.applicationFontFamilies(font_id)[0], 10)
+        return QApplication.font()
 
-    if font_id != -1:
-        family = QFontDatabase.applicationFontFamilies(font_id)[0]
-        return QFont(family, 10)
-    return QApplication.font()
+    return QFont(_INTER_FAMILY, 10)
 
 class GridWidget(QWidget):
     def __init__(self, parent=None):
@@ -115,7 +160,7 @@ class GridWidget(QWidget):
 
     def set_theme(self, theme):
         self.theme = theme
-        self.update()  # triggers repaint
+        self.update()
 
     def paintEvent(self, event):
         from PySide6.QtGui import QPainter, QPen
@@ -144,7 +189,7 @@ class GridStack(QStackedWidget):
 
     def set_theme(self, theme):
         self.theme = theme
-        self.update()  # triggers repaint
+        self.update()
 
     def paintEvent(self, event):
         from PySide6.QtGui import QPainter, QPen
@@ -178,7 +223,6 @@ class SetupWizard(QWidget):
         self.stack = QStackedWidget()
         self.pages_list = []
 
-        # --- Page 0: Welcome ---
         welcome = QWidget()
         wl = QVBoxLayout(welcome)
         wl.setAlignment(Qt.AlignCenter)
@@ -216,7 +260,6 @@ class SetupWizard(QWidget):
         wl.addWidget(wb, alignment=Qt.AlignCenter)
         self.pages_list.append(welcome)
 
-        # --- Page 1: Email ---
         email_page = QWidget()
         el = QVBoxLayout(email_page)
         el.setAlignment(Qt.AlignCenter)
@@ -229,13 +272,12 @@ class SetupWizard(QWidget):
         ed = QLabel(t("setup_email_desc", self.language))
         ed.setStyleSheet("font: normal 17px;")
         ed.setAlignment(Qt.AlignCenter)
-        self.email_input = QLineEdit()
-        self.email_input.setPlaceholderText("e.g. johndoe@gmail.com")
+        self.email_input = QComboBox()
+        self.email_input.setEditable(True)
         self.email_input.setFixedSize(500, 45)
-        self.email_input.setStyleSheet("QLineEdit { font-size: 16px; }")
-        self.email_input.setMaxLength(254)
-        self.email_input.setText(config.get("email_address", ""))
-        self.email_input.textChanged.connect(self.update_nav)
+        self.email_input.setFont(QFont(_INTER_FAMILY or "Inter", 12))
+        fill_combo(self.email_input, list_outlook_accounts(), config.get("email_address", ""))
+        self.email_input.currentTextChanged.connect(self._wizard_email_changed)
         el.addWidget(self.email_step)
         el.addSpacing(10)
         el.addWidget(et)
@@ -245,7 +287,6 @@ class SetupWizard(QWidget):
         el.addWidget(self.email_input, alignment=Qt.AlignCenter)
         self.pages_list.append(email_page)
 
-        # --- Page 2: Folder ---
         folder_page = QWidget()
         fl = QVBoxLayout(folder_page)
         fl.setAlignment(Qt.AlignCenter)
@@ -258,13 +299,12 @@ class SetupWizard(QWidget):
         fd = QLabel(t("setup_folder_desc", self.language))
         fd.setStyleSheet("font: normal 17px;")
         fd.setAlignment(Qt.AlignCenter)
-        self.folder_input = QLineEdit()
-        self.folder_input.setPlaceholderText("e.g. Inbox, shipbroking")
+        self.folder_input = QComboBox()
+        self.folder_input.setEditable(True)
         self.folder_input.setFixedSize(500, 45)
-        self.folder_input.setStyleSheet("QLineEdit { font-size: 16px; }")
-        self.folder_input.setMaxLength(254)
-        self.folder_input.setText(config.get("folder"))
-        self.folder_input.textChanged.connect(self.update_nav)
+        self.folder_input.setFont(QFont(_INTER_FAMILY or "Inter", 12))
+        fill_combo(self.folder_input, list_outlook_folders(config.get("email_address", "")), config.get("folder", "") or "")
+        self.folder_input.currentTextChanged.connect(self.update_nav)
         fl.addWidget(self.folder_step)
         fl.addSpacing(10)
         fl.addWidget(ft)
@@ -274,7 +314,6 @@ class SetupWizard(QWidget):
         fl.addWidget(self.folder_input, alignment=Qt.AlignCenter)
         self.pages_list.append(folder_page)
 
-        # --- Page 3: Excel ---
         excel_page = QWidget()
         xl = QVBoxLayout(excel_page)
         xl.setAlignment(Qt.AlignCenter)
@@ -312,7 +351,6 @@ class SetupWizard(QWidget):
         xl.addLayout(excel_row)
         self.pages_list.append(excel_page)
 
-        # --- Page 4: Finish ---
         finish = QWidget()
         fnl = QVBoxLayout(finish)
         fnl.setAlignment(Qt.AlignCenter)
@@ -338,7 +376,6 @@ class SetupWizard(QWidget):
         for page in self.pages_list:
             self.stack.addWidget(page)
 
-        # --- Navigation bar ---
         nav = QHBoxLayout()
         nav.setContentsMargins(40, 0, 40, 30)
         self.back_btn = QPushButton(t("setup_back", self.language))
@@ -388,11 +425,10 @@ class SetupWizard(QWidget):
         self.back_btn.setVisible(0 < idx < last)
         self.next_btn.setVisible(0 < idx < last)
 
-        # Disable next if current input field is empty
         if idx == 1:
-            self.next_btn.setEnabled(bool(self.email_input.text().strip()))
+            self.next_btn.setEnabled(bool(self.email_input.currentText().strip()))
         elif idx == 2:
-            self.next_btn.setEnabled(bool(self.folder_input.text().strip()))
+            self.next_btn.setEnabled(bool(self.folder_input.currentText().strip()))
         elif idx == 3:
             self.next_btn.setEnabled(True)
 
@@ -405,9 +441,9 @@ class SetupWizard(QWidget):
     def go_next(self):
         idx = self.stack.currentIndex()
         if idx == 1:
-            save_config(load_config() | {"email_address": self.email_input.text().strip()})
+            save_config(load_config() | {"email_address": self.email_input.currentText().strip()})
         elif idx == 2:
-            save_config(load_config() | {"folder": self.folder_input.text().strip()})
+            save_config(load_config() | {"folder": self.folder_input.currentText().strip()})
         elif idx == 3:
             save_config(load_config() | {"excel": self.excel_input.text().strip()})
 
@@ -420,6 +456,11 @@ class SetupWizard(QWidget):
         if idx > 0:
             self.stack.setCurrentIndex(idx - 1)
             self.update_nav()
+
+    def _wizard_email_changed(self, text):
+        # Refresh the folder dropdown to the chosen account's folders, then re-check nav.
+        fill_combo(self.folder_input, list_outlook_folders(text), self.folder_input.currentText())
+        self.update_nav()
 
     def browse_excel(self):
         path, _ = QFileDialog.getOpenFileName(self, "Select Excel File", "", "Excel Files (*.xlsx)")
@@ -449,7 +490,6 @@ class MainWindow(QMainWindow):
         self.language = config.get("language", "English")
         self.is_first_run = not config.get("setup_complete", False)
 
-        # Column order: MV, DWT/Built, Location, Open Date, Zone, Sender, Subject, Date
         self.col_widths = [160, 145, 150, 160, 140, 220, 200, 120]
 
         QApplication.setFont(get_font(self.language))
@@ -481,17 +521,9 @@ class MainWindow(QMainWindow):
         self.sidebar_layout.setContentsMargins(0, 0, 0, 0)
         self.sidebar_layout.setSpacing(0)
 
-        self.logo = QLabel("  MAIL AI")
+        self.logo = QLabel()
+        self.logo.setAlignment(Qt.AlignCenter)
         self.logo.setFixedHeight(70)
-        self.logo.setStyleSheet("""
-            font: 800 16px;
-            font-family: 'Syne';
-            color: #f0f9ff;
-            letter-spacing: 4px;
-            background-color: #0a1628;
-            border-bottom: 1px solid #1a3a5c;
-            padding-left: 16px;
-        """)
         self.sidebar_layout.addWidget(self.logo)
 
         self.pages = GridStack()
@@ -517,7 +549,7 @@ class MainWindow(QMainWindow):
                 QPushButton {
                     background-color: transparent;
                     color: #7ca4c0;
-                    font-family: 'DM Mono';
+                    font-family: 'Inter';
                     font-size: 13px;
                     font-weight: 500;
                     border: none;
@@ -542,10 +574,11 @@ class MainWindow(QMainWindow):
 
         self.sidebar_layout.addStretch()
 
-        ver = QLabel(f"  mailai.uk         v{APP_VERSION}")
+        ver = QLabel(f"  mailai.uk                                v{APP_VERSION}")
+        self.ver = ver
         ver.setFixedHeight(40)
         ver.setStyleSheet("""
-            font-family: 'DM Mono';
+            font-family: 'Inter';
             font-size: 11px;
             color: #5c5d66;
             background-color: transparent;
@@ -574,10 +607,9 @@ class MainWindow(QMainWindow):
     def on_setup_language_changed(self, language):
         self.language = language
         QApplication.setFont(get_font(language))
-        current_theme = load_config().get("theme", "dark")
+        current_theme = load_config().get("theme", "light")
         self.apply_theme(current_theme)
 
-        # Rebuild the wizard with the new language
         self.main_widget.layout().removeWidget(self.setup_wizard)
         self.setup_wizard.deleteLater()
         self.setup_wizard = SetupWizard(language=language, parent=self.main_widget)
@@ -662,33 +694,40 @@ class MainWindow(QMainWindow):
 
         caption = QLabel(t("email_caption", self.language))
         caption.setStyleSheet("font: 600 17px;")
-        input_box = QLineEdit()
-        input_box.setMaxLength(254)
-        input_box.setPlaceholderText("e.g. johndoe@gmail.com")
-        input_box.setFixedSize(700, 40)
-        input_box.setStyleSheet("QLineEdit { font-size: 16px; }")
-        input_box.setText(getattr(self, "email_address", ""))
-        input_box.textEdited.connect(self.email_entered)
+        self.email_combo = QComboBox()
+        self.email_combo.setEditable(True)
+        self.email_combo.setFixedSize(700, 40)
+        self.email_combo.setFont(QFont(_INTER_FAMILY or "Inter", 12))
+        fill_combo(self.email_combo, list_outlook_accounts(), getattr(self, "email_address", ""))
+        self.email_combo.currentTextChanged.connect(self._settings_email_changed)
 
         caption2 = QLabel(t("folder_caption", self.language))
         caption2.setStyleSheet("font: 600 17px;")
-        input_box2 = QLineEdit()
-        input_box2.setMaxLength(254)
-        input_box2.setPlaceholderText("e.g. Inbox, Archive")
-        input_box2.setFixedSize(700, 40)
-        input_box2.setStyleSheet("QLineEdit { font-size: 16px; }")
-        input_box2.setText(getattr(self, "folder", ""))
-        input_box2.textEdited.connect(self.folder_entered)
+        self.folder_combo = QComboBox()
+        self.folder_combo.setEditable(True)
+        self.folder_combo.setFixedSize(700, 40)
+        self.folder_combo.setFont(QFont(_INTER_FAMILY or "Inter", 12))
+        fill_combo(self.folder_combo, list_outlook_folders(getattr(self, "email_address", "")), getattr(self, "folder", ""))
+        self.folder_combo.currentTextChanged.connect(self.folder_entered)
 
         caption3 = QLabel(t("excel_caption", self.language))
         caption3.setStyleSheet("font: 600 17px;")
-        input_box3 = QLineEdit()
-        input_box3.setMaxLength(254)
-        input_box3.setPlaceholderText("e.g. extraction.xlsx")
-        input_box3.setFixedSize(700, 40)
-        input_box3.setStyleSheet("QLineEdit { font-size: 16px; }")
-        input_box3.setText(getattr(self, "excel", ""))
-        input_box3.textEdited.connect(self.excel_entered)
+        self.excel_settings_input = QLineEdit()
+        self.excel_settings_input.setMaxLength(254)
+        self.excel_settings_input.setPlaceholderText("e.g. extraction.xlsx")
+        self.excel_settings_input.setFixedSize(592, 40)
+        self.excel_settings_input.setStyleSheet("QLineEdit { font-size: 16px; }")
+        self.excel_settings_input.setText(getattr(self, "excel", ""))
+        self.excel_settings_input.textEdited.connect(self.excel_entered)
+        excel_browse_btn = QPushButton(t("setup_excel_browse", self.language))
+        excel_browse_btn.setFixedSize(100, 40)
+        excel_browse_btn.setStyleSheet("font-weight: 600;")
+        excel_browse_btn.clicked.connect(self.browse_excel_settings)
+        excel_row = QHBoxLayout()
+        excel_row.setAlignment(Qt.AlignLeft)
+        excel_row.addWidget(self.excel_settings_input)
+        excel_row.addSpacing(8)
+        excel_row.addWidget(excel_browse_btn)
 
         caption4 = QLabel(t("clear_duplicates_caption", self.language))
         caption4.setStyleSheet("font: 600 17px;")
@@ -700,13 +739,13 @@ class MainWindow(QMainWindow):
         content_layout.addWidget(header)
         content_layout.addSpacing(25)
         content_layout.addWidget(caption)
-        content_layout.addWidget(input_box)
+        content_layout.addWidget(self.email_combo)
         content_layout.addSpacing(25)
         content_layout.addWidget(caption2)
-        content_layout.addWidget(input_box2)
+        content_layout.addWidget(self.folder_combo)
         content_layout.addSpacing(25)
         content_layout.addWidget(caption3)
-        content_layout.addWidget(input_box3)
+        content_layout.addLayout(excel_row)
         content_layout.addSpacing(25)
         content_layout.addWidget(caption4)
         content_layout.addSpacing(5)
@@ -721,7 +760,7 @@ class MainWindow(QMainWindow):
         scroll_area.setFrameShape(QFrame.NoFrame)
 
         content = GridWidget()
-        content.set_theme(load_config().get("theme", "dark"))
+        content.set_theme(load_config().get("theme", "light"))
         self._settings_content = content
         content_layout = QVBoxLayout(content)
         content_layout.setAlignment(Qt.AlignTop | Qt.AlignLeft)
@@ -732,7 +771,7 @@ class MainWindow(QMainWindow):
         theme_label = QLabel(t("theme", self.language))
         theme_label.setStyleSheet("font: 600 17px;")
 
-        if load_config().get("theme", "dark") == "dark":
+        if load_config().get("theme", "light") == "dark":
             self.theme_btn = QPushButton(t("switch_light", self.language))
         else:
             self.theme_btn = QPushButton(t("switch_dark", self.language))
@@ -764,7 +803,6 @@ class MainWindow(QMainWindow):
         content_layout.addWidget(self.language_combo)
         content_layout.addSpacing(40)
 
-        # Custom zone mappings section
         zones_header = QLabel(t("custom_zones_header", self.language))
         zones_header.setStyleSheet("font: bold 26px;")
         content_layout.addWidget(zones_header)
@@ -775,7 +813,6 @@ class MainWindow(QMainWindow):
         content_layout.addWidget(zones_desc)
         content_layout.addSpacing(10)
 
-        # Input row for adding new mappings
         input_row = QHBoxLayout()
 
         port_label = QLabel(t("port_name_label", self.language))
@@ -812,7 +849,6 @@ class MainWindow(QMainWindow):
         content_layout.addWidget(self.zone_status_label)
         content_layout.addSpacing(15)
 
-        # List of current custom mappings
         zones_list_label = QLabel(t("custom_zones_list", self.language))
         zones_list_label.setStyleSheet("font: 600 17px;")
         content_layout.addWidget(zones_list_label)
@@ -853,7 +889,6 @@ class MainWindow(QMainWindow):
         self.license_input.setPlaceholderText("MAILAI-YYYYMM-XXXXXXXXXX")
         self.license_input.setFixedSize(340, 40)
         self.license_input.setStyleSheet("QLineEdit { font-size: 15px; }")
-        # Only show the saved key when Pro is actually active; on the trial the box stays empty.
         self.license_input.setText(cfg.get("license_key", "") if cfg.get("is_pro") else "")
 
         self.activate_btn = QPushButton(t("activate_btn", self.language))
@@ -967,26 +1002,14 @@ class MainWindow(QMainWindow):
         caption5 = QLabel(t("date_caption", self.language))
         caption5.setStyleSheet("font: 600 17px;")
 
-        self.input_day = QLineEdit()
-        self.input_day.setPlaceholderText("Day")
-        self.input_day.setFixedSize(80, 40)
-        self.input_day.setMaxLength(2)
-        self.input_day.setStyleSheet("QLineEdit { font-size: 16px; }")
-        self.input_day.textEdited.connect(lambda text: self.date_entered(text, "d"))
+        _cur_year = datetime.now().year
 
-        self.input_month = QLineEdit()
-        self.input_month.setPlaceholderText("Month")
-        self.input_month.setFixedSize(80, 40)
-        self.input_month.setMaxLength(2)
-        self.input_month.setStyleSheet("QLineEdit { font-size: 16px; }")
-        self.input_month.textEdited.connect(lambda text: self.date_entered(text, "m"))
-
-        self.input_year = QLineEdit()
-        self.input_year.setPlaceholderText("Year")
-        self.input_year.setFixedSize(100, 40)
-        self.input_year.setMaxLength(4)
-        self.input_year.setStyleSheet("QLineEdit { font-size: 16px; }")
-        self.input_year.textEdited.connect(lambda text: self.date_entered(text, "y"))
+        self.input_day = self._dt_combo("Day", [(str(d), f"{d:02d}") for d in range(1, 32)], 110, editable=True)
+        self.input_day.currentTextChanged.connect(self._date_combo_changed)
+        self.input_month = self._dt_combo("Month", [(MONTH_NAMES[m - 1], f"{m:02d}") for m in range(1, 13)], 150, editable=True)
+        self.input_month.currentTextChanged.connect(self._date_combo_changed)
+        self.input_year = self._dt_combo("Year", [(str(y), str(y)) for y in range(_cur_year, _cur_year - 6, -1)], 110, editable=True)
+        self.input_year.currentTextChanged.connect(self._date_combo_changed)
 
         input_row.addWidget(self.input_day)
         input_row.addWidget(self.input_month)
@@ -1000,37 +1023,24 @@ class MainWindow(QMainWindow):
         caption6.setMaximumWidth(1000)
         caption6.setStyleSheet("font: 600 17px;")
 
-        self.input_hour = QLineEdit()
-        self.input_hour.setPlaceholderText("Hour")
-        self.input_hour.setFixedSize(80, 40)
-        self.input_hour.setMaxLength(2)
-        self.input_hour.setStyleSheet("QLineEdit { font-size: 16px; }")
-        self.input_hour.textEdited.connect(lambda text: self.time_entered(text, "h"))
-
-        self.input_minute = QLineEdit()
-        self.input_minute.setPlaceholderText("Minutes")
-        self.input_minute.setFixedSize(80, 40)
-        self.input_minute.setMaxLength(2)
-        self.input_minute.setStyleSheet("QLineEdit { font-size: 16px; }")
-        self.input_minute.textEdited.connect(lambda text: self.time_entered(text, "m"))
-
-        self.input_ampm = QLineEdit()
-        self.input_ampm.setPlaceholderText("am/pm")
-        self.input_ampm.setFixedSize(100, 40)
-        self.input_ampm.setMaxLength(4)
-        self.input_ampm.setStyleSheet("QLineEdit { font-size: 16px; }")
-        self.input_ampm.textEdited.connect(lambda text: self.time_entered(text, "ampm"))
+        # 24-hour time (no AM/PM). Editable so a custom time can be typed; the minute
+        # dropdown suggests 15-minute steps but any 0-59 value can be entered.
+        self.input_hour = self._dt_combo("Hour", [(f"{h:02d}", f"{h:02d}") for h in range(0, 24)], 120, editable=True)
+        self.input_hour.currentTextChanged.connect(self._time_combo_changed)
+        self.input_minute = self._dt_combo("Min", [(f"{m:02d}", f"{m:02d}") for m in (0, 15, 30, 45)], 120, editable=True)
+        self.input_minute.currentTextChanged.connect(self._time_combo_changed)
+        time_colon = QLabel(":")
+        time_colon.setStyleSheet("font: 700 18px;")
 
         input_row2.addWidget(self.input_hour)
+        input_row2.addWidget(time_colon)
         input_row2.addWidget(self.input_minute)
-        input_row2.addWidget(self.input_ampm)
 
         self.btn = QPushButton(t("start_extracting", self.language))
         self.btn.setProperty("variant", "primary")
         self.btn.setFixedSize(200, 80)
         self.btn.clicked.connect(self.handle_extract)
         self.btn.setEnabled(False)
-        self.btn.setToolTip(t("tooltip", self.language))
 
         self.error = QLabel("")
         self.error.setStyleSheet("font: 600 16px; color: red;")
@@ -1060,7 +1070,7 @@ class MainWindow(QMainWindow):
     def _header_style(self):
         c = getattr(self, "_theme_colors", {})
         muted = c.get("muted", "#9b9ba3"); border = c.get("border", "#26272b")
-        return (f"font-family:'DM Mono'; font-size:13px; font-weight:600; "
+        return (f"font-family:'Inter'; font-size:13px; font-weight:600; "
                 f"letter-spacing:1px; color:{muted}; padding:10px 12px; "
                 f"border-bottom:1px solid {border};")
 
@@ -1070,7 +1080,7 @@ class MainWindow(QMainWindow):
         border = c.get("border", "#26272b"); accent = c.get("accent", "#22d3ee")
         col = accent if active else muted
         return (f"QPushButton {{ background:transparent; border:none; border-radius:0; "
-                f"border-bottom:1px solid {border}; color:{col}; font-family:'DM Mono'; "
+                f"border-bottom:1px solid {border}; color:{col}; font-family:'Inter'; "
                 f"font-size:13px; font-weight:600; letter-spacing:1px; padding:10px 12px; "
                 f"text-align:left; }}"
                 f"QPushButton:hover {{ color:{text}; }}")
@@ -1081,10 +1091,10 @@ class MainWindow(QMainWindow):
         surface = c.get("surface", "#141517"); border = c.get("border", "#26272b")
         row_bg = surface if (row_index % 2 == 1) else "transparent"
         base = f"padding:10px 12px; background:{row_bg}; border-bottom:1px solid {border};"
-        if col == 4:  # Zone — accent, monospace
-            return f"font-family:'DM Mono'; font-size:15px; font-weight:600; color:{accent}; {base}"
-        if col == 1:  # DWT/Built — monospace, left-aligned
-            return f"font-family:'DM Mono'; font-size:15px; color:{text}; {base}"
+        if col == 4:
+            return f"font-family:'Inter'; font-size:15px; font-weight:600; color:{accent}; {base}"
+        if col == 1:
+            return f"font-family:'Inter'; font-size:15px; color:{text}; {base}"
         return f"font-size:16px; color:{text}; {base}"
 
     def _status_box_qss(self, accent_hex):
@@ -1092,6 +1102,15 @@ class MainWindow(QMainWindow):
         surface = c.get("surface", "#141517"); border = c.get("border", "#26272b")
         return (f"background-color:{surface}; border:1px solid {border}; "
                 f"border-left:3px solid {accent_hex}; border-radius:8px; margin-left:-10px;")
+
+    def _style_extbox(self, color):
+        """Style the main status banner and remember its colour, so a theme toggle can
+        re-apply it with the new palette (its bg/border are baked from the theme)."""
+        self._main_status_color = color
+        try:
+            self.extbox.setStyleSheet(self._status_box_qss(color))
+        except RuntimeError:
+            pass
 
     def create_main_page(self):
         content = QWidget()
@@ -1106,7 +1125,7 @@ class MainWindow(QMainWindow):
         self.extbox.setWindowFlags(Qt.FramelessWindowHint)
         self.extbox.setAttribute(Qt.WA_TranslucentBackground)
         self.extbox.setFixedSize(600, 70)
-        self.extbox.setStyleSheet(self._status_box_qss("#34d399"))
+        self._style_extbox("#34d399")
 
         self.status = QLabel(t("extraction_running", self.language))
         self.status.setStyleSheet("font: 600 17px; padding: 15px;")
@@ -1128,16 +1147,14 @@ class MainWindow(QMainWindow):
         self.caption5 = QLabel("")
         self.caption5.setStyleSheet("font: 600 17px;")
 
-        # Table data model. Each row: {'zone', 'labels'[8], 'listened', 'starred', 'seq'}.
         self.table_data = []
-        self._sort_col = None     # None = default order; int (0–7) = sort by that label column
+        self._sort_col = None
         self._sort_asc = True
-        self._user_sorted = False  # True once the user clicks a header to sort
-        self._seq_counter = 0      # insertion order, for newest-first pinning of listened rows
-        self._populating = False   # guards itemChanged while we rebuild the table
-        self._visible_rows = []    # row-dicts in current display order (maps view row -> data)
+        self._seq_counter = 0
+        self._populating = False
+        self._visible_rows = []
 
-        # Column 0 is the star toggle; columns 1–8 are the data columns.
+        self._data_offset = 2
         self._header_texts = [
             "MV", "DWT/Built",
             t("location", self.language),
@@ -1147,38 +1164,33 @@ class MainWindow(QMainWindow):
             t("subject", self.language),
             t("date", self.language),
         ]
-        self.table = QTableWidget(0, len(self._header_texts) + 1)
-        self.table.setHorizontalHeaderLabels([""] + [h.upper() for h in self._header_texts])
+        self.table = QTableWidget(0, len(self._header_texts) + self._data_offset)
+        self.table.setHorizontalHeaderLabels(["", ""] + [h.upper() for h in self._header_texts])
         self.table.verticalHeader().setVisible(False)
         self.table.setShowGrid(False)
         self.table.setWordWrap(True)
-        self.table.setAlternatingRowColors(True)  # row striping (see alternate-background in _table_qss)
+        self.table.setAlternatingRowColors(True)
         self.table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.table.setMinimumSize(560, 280)
         self.table.setSelectionBehavior(QAbstractItemView.SelectItems)
         self.table.setSelectionMode(QAbstractItemView.SingleSelection)
-        # Double-click (or F2) edits a cell; the star column stays non-editable.
-        self.table.setEditTriggers(QAbstractItemView.DoubleClicked | QAbstractItemView.EditKeyPressed)
+        self.table.setEditTriggers(QAbstractItemView.EditKeyPressed)
         self.table.setStyleSheet(self._table_qss())
-        self.table.setColumnWidth(0, 44)
+        self.table.setColumnWidth(0, 38)
+        self.table.setColumnWidth(1, 30)
         for i, w in enumerate(self.col_widths):
-            self.table.setColumnWidth(i + 1, w)
+            self.table.setColumnWidth(i + self._data_offset, w)
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.Interactive)
         header.setSortIndicatorShown(False)
         header.setSectionsClickable(True)
-        header.setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)  # align headers with the left-aligned cells
+        header.setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         header.sectionClicked.connect(self._on_header_clicked)
         self.table.cellClicked.connect(self._on_cell_clicked)
         self.table.itemChanged.connect(self._on_item_changed)
-        # Click empty space in the table, or anywhere off it, to deselect the current cell.
-        # An application-wide filter is needed so clicks on non-focusable widgets still deselect.
         if not getattr(self, "_table_filter_installed", False):
             QApplication.instance().installEventFilter(self)
             self._table_filter_installed = True
-
-        # Small teal dot used to mark rows that arrived via live listening.
-        self._dot_icon = self._make_dot_icon()
 
         self.continue_listen_btn = QPushButton(t("continue_listen", self.language))
         self.continue_listen_btn.setFixedSize(250, 80)
@@ -1192,12 +1204,26 @@ class MainWindow(QMainWindow):
         self.open_excel_btn.clicked.connect(self.open_excel_file)
         self.open_excel_btn.hide()
 
+        tc = getattr(self, "_theme_colors", {})
+        _accent = tc.get("accent", "#22d3ee"); _muted = tc.get("muted", "#9b9ba3")
+        self.table_help = QLabel(
+            f"<div style='line-height:140%; color:{_muted}; font-size:12px;'>"
+            f"<b style='letter-spacing:1px;'>HOW TO USE</b><br>"
+            f"<span style='color:{_accent};'>&#9679;</span> Received via live listening"
+            f" &nbsp;&nbsp; <span style='color:{_accent};'>&#9733;</span> Click to star (pins to top)<br>"
+            f"Tap any cell to edit &nbsp;·&nbsp; Click a column header to sort"
+            f"</div>"
+        )
+        self.table_help.setTextFormat(Qt.RichText)
+        self.table_help.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+
         btn_row = QHBoxLayout()
-        btn_row.setAlignment(Qt.AlignLeft)
         btn_row.addWidget(self.stop_btn)
         btn_row.addWidget(self.new_extract_btn)
         btn_row.addWidget(self.continue_listen_btn)
         btn_row.addWidget(self.open_excel_btn)
+        btn_row.addStretch()
+        btn_row.addWidget(self.table_help, alignment=Qt.AlignRight | Qt.AlignVCenter)
 
         content_layout.addWidget(self.extheader, alignment=Qt.AlignLeft)
         content_layout.addSpacing(5)
@@ -1227,8 +1253,8 @@ class MainWindow(QMainWindow):
         self.statusl = QLabel(t("listening_paused", self.language))
         self.statusl.setStyleSheet("font: 600 17px; padding: 15px;")
 
-        lbox_layout = QVBoxLayout(self.lbox)  # use lbox not extbox
-        lbox_layout.addWidget(self.statusl)   # use statusl not status
+        lbox_layout = QVBoxLayout(self.lbox)
+        lbox_layout.addWidget(self.statusl)
 
         self.listen_toggle_btn = QPushButton(t("resume_listen", self.language))
         self.listen_toggle_btn.clicked.connect(self.toggle_listening)
@@ -1237,18 +1263,18 @@ class MainWindow(QMainWindow):
         self.lcount = QLabel("")
         self.lcount.setStyleSheet("font: 600 17px;")
 
-        self.lscrollf = QScrollArea()         # separate scroll area from extraction page
+        self.lscrollf = QScrollArea()
         self.lscrollf.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.lscrollf.setMinimumSize(560, 280)
         self.lscrollf.setWidgetResizable(True)
         self.lscrollf.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
         self.lscrollf.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
 
-        self.lcontainer = QWidget()           # separate container
+        self.lcontainer = QWidget()
         self.lcontainer.setMinimumWidth(1510)
-        self.lrow = 1                         # separate row counter
+        self.lrow = 1
 
-        self.lgrid = QGridLayout(self.lcontainer)  # separate grid
+        self.lgrid = QGridLayout(self.lcontainer)
         self.lgrid.setContentsMargins(10, 10, 10, 10)
         self.lgrid.setHorizontalSpacing(30)
         self.lgrid.setVerticalSpacing(15)
@@ -1295,10 +1321,6 @@ class MainWindow(QMainWindow):
             self.switch_page(self.page_home)
 
     def new_extraction(self):
-        # Stop any in-window listening before tearing down the main page. Disconnect the
-        # worker's UI slots first so its still-pending signals can't fire into the widgets
-        # we're about to delete (would raise "C++ object already deleted"). The thread.quit
-        # / deleteLater connections on `done` are left intact so the thread still cleans up.
         if getattr(self, "listen_worker", None):
             for sig, slot in ((self.listen_worker.new_email, self.add_listening_to_main_table),
                               (self.listen_worker.done, self.on_main_listen_done)):
@@ -1395,37 +1417,75 @@ class MainWindow(QMainWindow):
     def excel_entered(self, text):
         self.excel = text
         save_config(load_config() | {"excel": text})
+
+    def _settings_email_changed(self, text):
+        # Save the chosen account and refresh the folder dropdown to that account's folders.
+        self.email_entered(text)
+        fill_combo(self.folder_combo, list_outlook_folders(text), self.folder_combo.currentText())
+
+    def browse_excel_settings(self):
+        path, _ = QFileDialog.getOpenFileName(self, "Select Excel File", "", "Excel Files (*.xlsx)")
+        if path:
+            self.excel_settings_input.setText(path)
+            self.excel_entered(path)
     
     def refresh_duplicates(self):
         delete_duplicates()
         self.refresh_btn.setText(t("cleared", self.language))
         QTimer.singleShot(2000, lambda: self.refresh_btn.setText(t("clear_duplicates_btn", self.language)))
 
-    def date_entered(self, text, dmy):
-        if not text.isdigit():
-            return
-        if dmy == "d":
-            self.day = "0" + text if len(text) == 1 else text
-        elif dmy == "m":
-            self.month = "0" + text if len(text) == 1 else text
+    def _dt_combo(self, placeholder, values, width=90, editable=False):
+        """Build a date/time dropdown. Non-editable combos get a placeholder item (data "");
+        editable ones (the time fields) start empty with a placeholder and accept typed values."""
+        cb = QComboBox()
+        cb.setFixedSize(width, 40)
+        cb.setFont(QFont(_INTER_FAMILY or "Inter", 12))
+        for disp, val in values:
+            cb.addItem(disp, val)
+        cb.setCurrentIndex(-1)  # start unselected so the placeholder shows (not a list item)
+        if editable:
+            cb.setEditable(True)
+            cb.setInsertPolicy(QComboBox.NoInsert)
+            cb.lineEdit().setPlaceholderText(placeholder)
         else:
-            self.year = text
+            cb.setPlaceholderText(placeholder)
+        return cb
 
-        if getattr(self, "day", "") and getattr(self, "month", "") and getattr(self, "year", ""):
-            self.date = self.year + "-" + self.month + "-" + self.day
+    @staticmethod
+    def _norm_num(text, lo, hi):
+        """Normalise typed/selected time text to a zero-padded 2-digit string in range, else ''."""
+        text = (text or "").strip()
+        if text.isdigit() and lo <= int(text) <= hi:
+            return f"{int(text):02d}"
+        return ""
 
-    def time_entered(self, text, hm):
-        if hm != "ampm" and not text.isdigit():
-            return
-        if hm == "h":
-            self.hours = "0" + text if len(text) == 1 else text
-        elif hm == "m":
-            self.minutes = "0" + text if len(text) == 1 else text
-        else:
-            self.ampm = text.upper()
+    @staticmethod
+    def _norm_year(text):
+        text = (text or "").strip()
+        return text if (text.isdigit() and len(text) == 4) else ""
 
-        if getattr(self, "hours", "") and getattr(self, "minutes", "") and getattr(self, "ampm", ""):
-            self.time = self.hours + ":" + self.minutes + " " + self.ampm
+    def _norm_month(self, text):
+        text = (text or "").strip()
+        if text.isdigit() and 1 <= int(text) <= 12:
+            return f"{int(text):02d}"
+        tl = text.lower()
+        for i, name in enumerate(MONTH_NAMES, 1):
+            if tl and name.lower().startswith(tl):
+                return f"{i:02d}"
+        return ""
+
+    def _date_combo_changed(self, *_):
+        # Editable: read the (possibly typed) text and normalise. Month accepts a name or number.
+        self.day = self._norm_num(self.input_day.currentText(), 1, 31)
+        self.month = self._norm_month(self.input_month.currentText())
+        self.year = self._norm_year(self.input_year.currentText())
+        self.date = f"{self.year}-{self.month}-{self.day}" if (self.day and self.month and self.year) else None
+
+    def _time_combo_changed(self, *_):
+        # Editable: read the (possibly typed) text and normalise. 24-hour, no AM/PM.
+        self.hours = self._norm_num(self.input_hour.currentText(), 0, 23)
+        self.minutes = self._norm_num(self.input_minute.currentText(), 0, 59)
+        self.time = f"{self.hours}:{self.minutes}" if (self.hours and self.minutes) else None
 
     def handle_extract(self):
         self.btn.setEnabled(False)
@@ -1501,11 +1561,11 @@ class MainWindow(QMainWindow):
 
         if email_data.get("type") == "excel_locked":
             self.status.setText("Waiting for Excel file to close...")
-            self.extbox.setStyleSheet(self._status_box_qss("#f59e0b"))
+            self._style_extbox("#f59e0b")
             return
         if email_data.get("type") == "excel_unlocked":
             self.status.setText(t("extraction_running", self.language))
-            self.extbox.setStyleSheet(self._status_box_qss("#34d399"))
+            self._style_extbox("#34d399")
             return
 
         try:
@@ -1612,34 +1672,24 @@ class MainWindow(QMainWindow):
         received = email_data["received_time"][:10]
         return zone, [mv, dwt_built, location, date, zone, sender, subject, received]
 
-    def _make_dot_icon(self):
-        """A small filled teal circle, used to mark live-listened rows on the MV column."""
-        accent = getattr(self, "_theme_colors", {}).get("accent", "#22d3ee")
-        pm = QPixmap(14, 14)
-        pm.fill(Qt.transparent)
-        p = QPainter(pm)
-        p.setRenderHint(QPainter.Antialiasing)
-        p.setBrush(QColor(accent))
-        p.setPen(Qt.NoPen)
-        p.drawEllipse(2, 2, 10, 10)
-        p.end()
-        return QIcon(pm)
-
     def _table_qss(self):
         c = getattr(self, "_theme_colors", {})
         text = c.get("text", "#f4f4f5"); muted = c.get("muted", "#9b9ba3")
         border = c.get("border", "#26272b"); surface = c.get("surface", "#141517")
-        accent = c.get("accent", "#22d3ee"); bg = c.get("bg", "#0a0b0d")
+        surface2 = c.get("surface2", "#1a1b1e"); accent = c.get("accent", "#22d3ee")
+        bg = c.get("bg", "#0a0b0d")
         return (
             f"QTableWidget {{ background:transparent; border:none; color:{text}; font-size:16px; "
-            f"gridline-color:{border}; alternate-background-color:{surface}; "
-            f"selection-background-color:{accent}; selection-color:{bg}; }}"
+            f"gridline-color:{border}; alternate-background-color:{surface}; outline:0; "
+            f"selection-background-color:{surface2}; selection-color:{text}; }}"
             f"QTableWidget::item {{ padding:8px 10px; border-bottom:1px solid {border}; }}"
-            f"QTableWidget QLineEdit {{ background:{surface}; color:{text}; "
-            f"border:1px solid {accent}; selection-background-color:{accent}; selection-color:{bg}; }}"
+            f"QTableWidget::item:selected {{ background:{surface2}; color:{text}; }}"
+            f"QTableWidget QLineEdit {{ background:{bg}; color:{text}; border:1px solid {accent}; "
+            f"border-radius:3px; padding:7px 9px; selection-background-color:{accent}; "
+            f"selection-color:{bg}; }}"
             f"QHeaderView {{ background:transparent; }}"
             f"QHeaderView::section {{ background:transparent; color:{muted}; border:none; "
-            f"border-bottom:1px solid {border}; padding:10px 10px; font-family:'DM Mono'; "
+            f"border-bottom:1px solid {border}; padding:10px 10px; font-family:'Inter'; "
             f"font-size:13px; font-weight:600; }}"
             f"QHeaderView::section:hover {{ color:{text}; }}"
             f"QTableCornerButton::section {{ background:transparent; border:none; }}"
@@ -1651,34 +1701,35 @@ class MainWindow(QMainWindow):
         return int(m.group(1)) if m else float('inf')
 
     def _ordered_rows(self):
-        """Display order: starred rows pinned to the very top, then — until the user sorts —
-        live-listened rows (newest first), then the extracted batch in Zone/DWT order. Once the
-        user clicks a header, everything below the starred rows is sorted by that column."""
+        """Display order: starred rows first, then live-listened rows (newest first) pinned to
+        the top, then everything else. The 'else' block sorts by the user's chosen column if
+        they've clicked a header, otherwise the default Zone/DWT order. Sorting a header clears
+        the current listened flags (folding those rows in), but a fresh listened arrival re-pins
+        with its dot until the next sort."""
         rows = list(self.table_data)
         starred = [r for r in rows if r.get('starred')]
-        rest = [r for r in rows if not r.get('starred')]
+        listened = [r for r in rows if r.get('listened') and not r.get('starred')]
+        base = [r for r in rows if not r.get('listened') and not r.get('starred')]
         starred.sort(key=lambda r: r.get('seq', 0))
+        listened.sort(key=lambda r: r.get('seq', 0), reverse=True)
         if self._sort_col is not None:
             col = self._sort_col
             keyf = self._dwt_num if col == 1 else (lambda r: (r['labels'][col] or '').upper())
-            rest.sort(key=keyf, reverse=not self._sort_asc)
+            base.sort(key=keyf, reverse=not self._sort_asc)
         else:
-            listened = [r for r in rest if r.get('listened')]
-            base = [r for r in rest if not r.get('listened')]
-            listened.sort(key=lambda r: r.get('seq', 0), reverse=True)  # newest pinned on top
             base.sort(key=lambda r: (
                 'ZZZ' if r.get('zone', '').upper() in ('', 'UNKNOWN') else r.get('zone', '').upper(),
                 self._dwt_num(r)))
-            rest = listened + base
-        return starred + rest
+        return starred + listened + base
 
     def _render_main_table(self):
-        """Rebuild the QTableWidget from table_data in the current display order."""
+        """Rebuild the QTableWidget from table_data in the current display order.
+        Col 0 = user star, col 1 = live-listened dot, col 2.. = the editable data columns."""
         if getattr(self, "table", None) is None:
             return
         c = getattr(self, "_theme_colors", {})
         accent = c.get("accent", "#22d3ee"); muted = c.get("muted", "#9b9ba3")
-        mono = QFont("DM Mono")
+        off = self._data_offset
         self._populating = True
         try:
             ordered = self._ordered_rows()
@@ -1686,38 +1737,42 @@ class MainWindow(QMainWindow):
             self.table.setRowCount(len(ordered))
             for r, rowd in enumerate(ordered):
                 starred = rowd.get('starred', False)
-                listened = rowd.get('listened', False) and not self._user_sorted
+                listened = rowd.get('listened', False)
+
                 star = QTableWidgetItem("★" if starred else "☆")
                 star.setTextAlignment(Qt.AlignCenter)
-                star.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)  # clickable but not editable
+                star.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
                 star.setForeground(QColor(accent if starred else muted))
                 star.setToolTip("Click to star — starred vessels pin to the top")
                 self.table.setItem(r, 0, star)
+
+                dot = QTableWidgetItem("●" if listened else "")
+                dot.setTextAlignment(Qt.AlignCenter)
+                dot.setFlags(Qt.ItemIsEnabled)
+                dot.setForeground(QColor(accent))
+                if listened:
+                    dot.setToolTip("Received via live listening")
+                self.table.setItem(r, 1, dot)
+
                 for ci, val in enumerate(rowd['labels']):
                     item = QTableWidgetItem(val or "")
-                    if ci in (1, 4):  # DWT/Built and Zone use the mono face
-                        item.setFont(mono)
-                    if ci == 4:       # Zone — accent colour
+                    if ci == 4:  # Zone — accent colour
                         item.setForeground(QColor(accent))
-                    if ci == 0 and listened:
-                        item.setIcon(self._dot_icon)
-                        item.setToolTip("Added via live listening")
-                    self.table.setItem(r, ci + 1, item)
+                    self.table.setItem(r, ci + off, item)
             self.table.resizeRowsToContents()
         finally:
             self._populating = False
 
     def _on_header_clicked(self, section):
-        if section == 0:
-            return  # star column isn't sortable
-        col = section - 1
+        off = self._data_offset
+        if section < off:
+            return
+        col = section - off
         if self._sort_col == col:
             self._sort_asc = not self._sort_asc
         else:
             self._sort_col = col
             self._sort_asc = True
-        self._user_sorted = True
-        # Sorting alphabetically drops the "new arrival" pinning, so clear the listened markers.
         for r in self.table_data:
             r['listened'] = False
         self._render_main_table()
@@ -1726,25 +1781,30 @@ class MainWindow(QMainWindow):
         h.setSortIndicator(section, Qt.AscendingOrder if self._sort_asc else Qt.DescendingOrder)
 
     def _on_cell_clicked(self, row, col):
-        if col != 0 or row < 0 or row >= len(self._visible_rows):
+        if row < 0 or row >= len(self._visible_rows):
             return
-        rowd = self._visible_rows[row]
-        rowd['starred'] = not rowd.get('starred', False)
-        self._render_main_table()
+        if col == 0:
+            rowd = self._visible_rows[row]
+            rowd['starred'] = not rowd.get('starred', False)
+            self._render_main_table()
+        elif col >= self._data_offset:
+            item = self.table.item(row, col)
+            if item is not None:
+                self.table.editItem(item)
 
     def _on_item_changed(self, item):
         if self._populating:
             return
         col = item.column()
-        if col == 0:  # star column is not editable
+        if col < self._data_offset:
             return
         r = item.row()
         if r < 0 or r >= len(self._visible_rows):
             return
-        lbl_col = col - 1
+        lbl_col = col - self._data_offset
         rowd = self._visible_rows[r]
         rowd['labels'][lbl_col] = item.text()
-        if lbl_col == 4:  # zone edited — keep the model's zone field in sync for ordering
+        if lbl_col == 4:
             rowd['zone'] = item.text()
 
     def eventFilter(self, obj, event):
@@ -1752,22 +1812,23 @@ class MainWindow(QMainWindow):
         space or anywhere off the table. App-wide so clicks on non-focusable widgets count."""
         if event.type() == QEvent.MouseButtonPress:
             tbl = getattr(self, "table", None)
-            if tbl is not None and tbl.isVisible() and tbl.state() != QAbstractItemView.EditingState:
-                vp = tbl.viewport()
-                local = vp.mapFromGlobal(event.globalPosition().toPoint())
-                inside_cell = vp.rect().contains(local) and tbl.indexAt(local).isValid()
-                if not inside_cell:
-                    tbl.clearSelection()
+            try:
+                if tbl is not None and tbl.isVisible() and tbl.state() != QAbstractItemView.EditingState:
+                    vp = tbl.viewport()
+                    local = vp.mapFromGlobal(event.globalPosition().toPoint())
+                    inside_cell = vp.rect().contains(local) and tbl.indexAt(local).isValid()
+                    if not inside_cell:
+                        tbl.clearSelection()
+            except RuntimeError:
+                self.table = None
         return super().eventFilter(obj, event)
 
     def _set_main_status(self, color, text):
-        # Guard against the main page being torn down (new extraction / window close)
-        # while a background listen worker is still emitting status updates.
         try:
             self.status.setText(text)
-            self.extbox.setStyleSheet(self._status_box_qss(color))
+            self._style_extbox(color)
         except RuntimeError:
-            pass  # underlying C++ widget already deleted
+            pass
 
     def start_main_listening(self):
         """Continue listening within the main extraction view, feeding new vessels into
@@ -1796,7 +1857,6 @@ class MainWindow(QMainWindow):
         self.continue_listen_btn.show()
 
     def add_listening_to_main_table(self, email_data):
-        # Excel is open → can't write, so listening is effectively paused until it closes.
         if email_data.get("type") == "excel_locked":
             self._set_main_status("#f59e0b", t("listening_paused", self.language) + " — close Excel to continue")
             return
@@ -1806,7 +1866,6 @@ class MainWindow(QMainWindow):
         try:
             zone, labels = self._row_from_email(email_data)
             self._seq_counter += 1
-            # listened=True pins it to the top (newest first) until the user sorts a column.
             self.table_data.append({
                 'zone': zone, 'labels': labels,
                 'listened': True, 'starred': False, 'seq': self._seq_counter,
@@ -1818,9 +1877,6 @@ class MainWindow(QMainWindow):
 
     def on_main_listen_done(self):
         self.listening_running = False
-        # The main page (and its status widgets) may have been torn down — e.g. the user
-        # started a new extraction or closed the window — while this worker was finishing.
-        # In that case there's nothing to update; bail before touching deleted widgets.
         if self.page_main is None:
             return
         err = getattr(self.listen_worker, "api_error_key", None)
@@ -1835,7 +1891,7 @@ class MainWindow(QMainWindow):
                 self._set_main_status("#f59e0b", t("listening_paused", self.language))
             self.continue_listen_btn.setText(t("resume_listen", self.language))
         except RuntimeError:
-            pass  # underlying C++ widgets already deleted mid-teardown
+            pass
 
     def toggle_main_listening(self):
         if self.listening_running:
@@ -1869,24 +1925,22 @@ class MainWindow(QMainWindow):
             self.extheader.setText(t("limit_reached_title", self.language))
             self.extheader.setStyleSheet("font: bold 25px; color: #22d3ee;")
             self.status.setText(t("extraction_stopped", self.language))
-            self.extbox.setStyleSheet(self._status_box_qss("#f87171"))
+            self._style_extbox("#f87171")
         elif error_key:
             self.extheader.setText(t(error_key, self.language))
             self.extheader.setStyleSheet("font: bold 25px; color: red;")
             self.status.setText(t("extraction_stopped", self.language))
-            self.extbox.setStyleSheet(self._status_box_qss("#f87171"))
+            self._style_extbox("#f87171")
         elif not self.table_data:
             self.extheader.setText(t("extraction_complete_none", self.language))
             self.extheader.setStyleSheet("font: bold 25px;")
             self.table.setRowCount(0)
             self.status.setText(t("extraction_stopped", self.language))
-            self.extbox.setStyleSheet(self._status_box_qss("#f87171"))
+            self._style_extbox("#f87171")
         else:
             self.extheader.setText(t("extraction_complete", self.language))
             self.extheader.setStyleSheet("font: bold 25px;")
             self._render_main_table()
-            # Bake listening into this same view — keep the extracted vessels on screen and
-            # keep listening for new arrivals, pinning them to the top (no window switch).
             self.start_main_listening()
 
         self.btn.setEnabled(True)
@@ -1903,9 +1957,10 @@ class MainWindow(QMainWindow):
         )
 
         for field in (self.input_day, self.input_month, self.input_year,
-                      self.input_hour, self.input_minute, self.input_ampm):
-            field.clear()
-        self.day = self.month = self.year = self.hours = self.minutes = self.ampm = ""
+                      self.input_hour, self.input_minute):
+            field.setCurrentIndex(-1)
+            field.clearEditText()
+        self.day = self.month = self.year = self.hours = self.minutes = ""
         self.date = None
         self.time = None
 
@@ -1930,7 +1985,6 @@ class MainWindow(QMainWindow):
 
     def toggle_listening(self):
         if self.listening_running:
-            # pause
             if hasattr(self, "listen_worker") and self.listen_worker:
                 self.listen_worker.stop()
 
@@ -1939,7 +1993,6 @@ class MainWindow(QMainWindow):
             self.statusl.setText(t("listening_paused", self.language))
             self.lbox.setStyleSheet(self._status_box_qss("#f59e0b"))
         else:
-            # resume — if old thread still winding down, wait non-blocking via signal
             try:
                 thread_running = (
                     hasattr(self, "listen_thread")
@@ -2003,7 +2056,6 @@ class MainWindow(QMainWindow):
         dialog.exec()
 
     def start_update_check(self):
-        # Only the built executable can self-update.
         if not getattr(sys, "frozen", False):
             return
         self._upd_check_thread = QThread()
@@ -2064,7 +2116,7 @@ class MainWindow(QMainWindow):
     def _on_update_done(self, ok, err):
         self._upd_thread.quit()
         if ok:
-            QApplication.quit()  # the new exe was already launched by apply_update()
+            QApplication.quit()
         else:
             self._upd_dialog.reject()
             QMessageBox.warning(
@@ -2090,7 +2142,7 @@ class MainWindow(QMainWindow):
 
     def toggle_theme(self):
         config = load_config()
-        current = config.get("theme", "dark")
+        current = config.get("theme", "light")
 
         if current == "dark":
             self.apply_theme("light")
@@ -2113,13 +2165,16 @@ class MainWindow(QMainWindow):
             }
         else:
             c = {
-                "bg": "#fafafa", "surface": "#ffffff", "surface2": "#f4f4f5", "border": "#e4e4e7",
-                "text": "#18181b", "muted": "#52525b", "dim": "#a1a1aa",
+                "bg": "#ffffff", "surface": "#f7f8f9", "surface2": "#eef0f2", "border": "#e5e7eb",
+                "text": "#16181d", "muted": "#5b616e", "dim": "#9aa0aa",
                 "accent": "#0891b2", "accent_hover": "#0e7490", "on_accent": "#ffffff",
-                "sidebar_bg": "#f4f4f5",
+                "sidebar_bg": "#f7f8f9",
             }
-        self._theme_colors = c  # stashed for chips, pills, and active-state styling
-        ui_font = "Source Han Sans SC" if self.language == "中文" else "Syne"
+        self._theme_colors = c
+        get_font(self.language)  # ensure Inter is registered before building QSS
+        ui_font = "Source Han Sans SC" if self.language == "中文" else (_INTER_FAMILY or "Inter")
+        # Custom combobox chevron (theme-matched). Forward slashes for QSS url() on Windows.
+        _chev = resource_path("chevron-dark.svg" if theme == "dark" else "chevron-light.svg").replace("\\", "/")
 
         QApplication.instance().setStyleSheet(f"""
             QMainWindow {{ background-color: {c['bg']}; }}
@@ -2161,6 +2216,14 @@ class MainWindow(QMainWindow):
                 font-size: 13pt;
             }}
             QComboBox:hover {{ border-color: {c['accent']}; }}
+            QComboBox::drop-down {{
+                subcontrol-origin: padding;
+                subcontrol-position: center right;
+                width: 26px;
+                border: none;
+                background: transparent;
+            }}
+            QComboBox::down-arrow {{ image: url("{_chev}"); width: 14px; height: 14px; }}
             QComboBox QAbstractItemView {{
                 background-color: {c['surface']};
                 color: {c['text']};
@@ -2198,23 +2261,33 @@ class MainWindow(QMainWindow):
             }}
         """)
 
+        self.logo.setText("Mail AI")
         self.logo.setStyleSheet(f"""
-            font: 800 16px;
-            font-family: 'Syne';
+            font-family: '{ui_font}';
+            font-size: 18px;
+            font-weight: 800;
             color: {c['text']};
-            letter-spacing: 4px;
             background-color: {c['sidebar_bg']};
             border-bottom: 1px solid {c['border']};
-            padding-left: 16px;
         """)
 
-        sidebar_font = "Source Han Sans SC" if self.language == "中文" else "DM Mono"
+        if hasattr(self, "ver") and self.ver:
+            self.ver.setStyleSheet(f"""
+                font-family: 'Inter';
+                font-size: 11px;
+                color: {c['dim']};
+                background-color: transparent;
+                border-top: 1px solid {c['border']};
+                padding-left: 16px;
+            """)
+
+        sidebar_font = "Source Han Sans SC" if self.language == "中文" else ui_font
         self._sidebar_btn_qss = f"""
             QPushButton {{
                 background-color: transparent;
                 color: {c['muted']};
                 font-family: '{sidebar_font}';
-                font-size: 13px;
+                font-size: 15px;
                 font-weight: 500;
                 border: none;
                 border-left: 2px solid transparent;
@@ -2233,7 +2306,7 @@ class MainWindow(QMainWindow):
                 background-color: transparent;
                 color: {c['text']};
                 font-family: '{sidebar_font}';
-                font-size: 13px;
+                font-size: 15px;
                 font-weight: 600;
                 border: none;
                 border-left: 2px solid {c['accent']};
@@ -2256,6 +2329,19 @@ class MainWindow(QMainWindow):
         self.pages.set_theme(theme)
         if hasattr(self, '_settings_content') and self._settings_content:
             self._settings_content.set_theme(theme)
+
+        # Re-theme the results table: its stylesheet and per-cell colours/fonts are baked at
+        # render time, so on a theme toggle we must re-apply the QSS and rebuild the rows,
+        # otherwise some cells keep the old palette and become unreadable.
+        if getattr(self, "table", None) is not None:
+            try:
+                self.table.setStyleSheet(self._table_qss())
+                self._render_main_table()
+            except RuntimeError:
+                self.table = None  # page was torn down
+        if getattr(self, "extbox", None) is not None:
+            self._style_extbox(getattr(self, "_main_status_color", "#34d399"))
+
         QApplication.setFont(get_font(self.language))
 
         if hasattr(self, 'setup_wizard') and self.setup_wizard:
@@ -2290,7 +2376,6 @@ class MainWindow(QMainWindow):
         old_filtering.deleteLater()
         old_settings.deleteLater()
 
-        # update sidebar buttons
         self.extract_sidebar_btn.setText(t("extract", self.language))
         self.filtering_sidebar_btn.setText(t("filtering", self.language))
         self.settings_sidebar_btn.setText(t("settings", self.language))
@@ -2298,7 +2383,7 @@ class MainWindow(QMainWindow):
         self.pages.setCurrentWidget(self.page_settings)
 
         QApplication.setFont(get_font(self.language))
-        current_theme = load_config().get("theme", "dark")
+        current_theme = load_config().get("theme", "light")
         self.apply_theme(current_theme)
 
 
@@ -2307,8 +2392,7 @@ if __name__ == "__main__":
     load_email_ids()
     config = load_config()
     refresh_access_state()
-    cleanup_old_update()  # remove leftover .old exe from a previous self-update
-    # Crisp rendering on fractional display scaling (125%/150%) for sharp screenshots.
+    cleanup_old_update()
     try:
         QApplication.setHighDpiScaleFactorRoundingPolicy(
             Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
@@ -2317,7 +2401,7 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     app.setWindowIcon(QIcon(resource_path("icon.png")))
     window = MainWindow()
-    window.apply_theme(config.get("theme", "dark"))
+    window.apply_theme(config.get("theme", "light"))
     window.show()
-    window.start_update_check()  # check GitHub for a newer release (built exe only)
+    window.start_update_check()
     sys.exit(app.exec())
