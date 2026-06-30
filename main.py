@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtGui import (
     QFontDatabase, QFont, QColor, QPalette, QIcon, QDesktopServices
 )
-from PySide6.QtCore import Qt, QObject, Signal, Slot, QThread, QTimer, QUrl, QEvent
+from PySide6.QtCore import Qt, QObject, Signal, Slot, QThread, QTimer, QUrl, QEvent, QVariantAnimation, QEasingCurve
 
 import ctypes
 ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('Mail AI')
@@ -123,12 +123,12 @@ class UpdateChecker(QObject):
 
 
 class UpdateWorker(QObject):
-    """Downloads and applies the update off the UI thread."""
+    """Downloads + stages the update off the UI thread. It is applied on quit, not now."""
     done = Signal(bool, str)
 
     def run(self):
         try:
-            apply_update()
+            download_update()
             self.done.emit(True, "")
         except Exception as e:
             self.done.emit(False, str(e))
@@ -1153,6 +1153,8 @@ class MainWindow(QMainWindow):
         self._seq_counter = 0
         self._populating = False
         self._visible_rows = []
+        self._search_pos = -1
+        self._search_last_q = ""
 
         self._data_offset = 2
         self._header_texts = [
@@ -1230,7 +1232,20 @@ class MainWindow(QMainWindow):
         content_layout.addWidget(self.extbox, alignment=Qt.AlignLeft)
         content_layout.addSpacing(5)
         content_layout.addLayout(btn_row)
-        content_layout.addWidget(self.caption5, alignment=Qt.AlignLeft)
+
+        self.table_search = QLineEdit()
+        self.table_search.setPlaceholderText("Search the table…  (Enter = next match)")
+        self.table_search.setClearButtonEnabled(True)
+        self.table_search.setFixedSize(340, 36)
+        self.table_search.setFont(QFont(_INTER_FAMILY or "Inter", 11))
+        self.table_search.textChanged.connect(lambda: self._run_search(advance=False))
+        self.table_search.returnPressed.connect(lambda: self._run_search(advance=True))
+        search_row = QHBoxLayout()
+        search_row.addWidget(self.caption5, alignment=Qt.AlignLeft | Qt.AlignVCenter)
+        search_row.addStretch()
+        search_row.addWidget(self.table_search, alignment=Qt.AlignRight | Qt.AlignVCenter)
+
+        content_layout.addLayout(search_row)
         content_layout.addWidget(self.table, 1)
 
         return content
@@ -1503,6 +1518,9 @@ class MainWindow(QMainWindow):
 
         self.extracting_running = True
         self._current_excel = resolve_excel_path(self.excel)
+        # Anchor for auto-listening: capture the moment extraction begins so listening later
+        # picks up everything from here on, with no gap while the extraction runs.
+        self._extraction_started = datetime.now()
         self.show_main_page()
 
         self.thread = QThread()
@@ -1598,6 +1616,7 @@ class MainWindow(QMainWindow):
             })
             self._render_main_table()
             self.table.scrollToBottom()
+            self._flash_new_row(self._seq_counter)
 
             self.emails_processed += 1
 
@@ -1702,10 +1721,10 @@ class MainWindow(QMainWindow):
 
     def _ordered_rows(self):
         """Display order: starred rows first, then live-listened rows (newest first) pinned to
-        the top, then everything else. The 'else' block sorts by the user's chosen column if
-        they've clicked a header, otherwise the default Zone/DWT order. Sorting a header clears
-        the current listened flags (folding those rows in), but a fresh listened arrival re-pins
-        with its dot until the next sort."""
+        the top, then everything else. The base block keeps extraction order (the order rows
+        arrived) until the user clicks a column header to sort — no automatic zone sorting.
+        Sorting a header clears the current listened flags (folding those rows in); a fresh
+        listened arrival re-pins with its dot until the next sort."""
         rows = list(self.table_data)
         starred = [r for r in rows if r.get('starred')]
         listened = [r for r in rows if r.get('listened') and not r.get('starred')]
@@ -1717,9 +1736,7 @@ class MainWindow(QMainWindow):
             keyf = self._dwt_num if col == 1 else (lambda r: (r['labels'][col] or '').upper())
             base.sort(key=keyf, reverse=not self._sort_asc)
         else:
-            base.sort(key=lambda r: (
-                'ZZZ' if r.get('zone', '').upper() in ('', 'UNKNOWN') else r.get('zone', '').upper(),
-                self._dwt_num(r)))
+            base.sort(key=lambda r: r.get('seq', 0))   # extraction order; await header click
         return starred + listened + base
 
     def _render_main_table(self):
@@ -1807,6 +1824,90 @@ class MainWindow(QMainWindow):
         if lbl_col == 4:
             rowd['zone'] = item.text()
 
+    def _run_search(self, advance=False):
+        """Find rows whose any data cell contains the query, and jump to one. Typing jumps to
+        the first match; Enter cycles to the next (wrapping)."""
+        if getattr(self, "table", None) is None:
+            return
+        q = self.table_search.text().strip().lower()
+        if not q:
+            self.table.clearSelection()
+            self._search_pos = -1
+            self._search_last_q = ""
+            return
+        off = self._data_offset
+        matches = []   # (row, col) of the first matching cell per row
+        for r in range(self.table.rowCount()):
+            for c in range(off, self.table.columnCount()):
+                it = self.table.item(r, c)
+                if it and q in it.text().lower():
+                    matches.append((r, c))
+                    break
+        if not matches:
+            self.table.clearSelection()
+            return
+        if q != self._search_last_q or self._search_pos < 0:
+            pos = 0                                   # new query -> first match
+        elif advance:
+            pos = (self._search_pos + 1) % len(matches)   # Enter -> next, wrap
+        else:
+            pos = min(self._search_pos, len(matches) - 1)
+        self._search_last_q = q
+        self._search_pos = pos
+        row, col = matches[pos]
+        self.table.setCurrentCell(row, col)           # highlights + makes it the current cell
+        self.table.scrollToItem(self.table.item(row, col), QAbstractItemView.PositionAtCenter)
+
+    def _flash_new_row(self, seq):
+        """Subtle 'new arrival' cue: fade a freshly-added row's text in from transparent to its
+        final colour. Targets the row by seq so reordering doesn't misfire."""
+        if getattr(self, "table", None) is None:
+            return
+        row = next((i for i, r in enumerate(self._visible_rows) if r.get('seq') == seq), None)
+        if row is None:
+            return
+        prev = getattr(self, "_row_anim", None)
+        if prev is not None:
+            prev.stop()
+        c = getattr(self, "_theme_colors", {})
+        accent = QColor(c.get("accent", "#22d3ee"))
+        text = QColor(c.get("text", "#16181d"))
+        muted = QColor(c.get("muted", "#5b616e"))
+        starred = self._visible_rows[row].get('starred', False)
+        zone_col = self._data_offset + 4
+        cols = self.table.columnCount()
+
+        def target(cc):
+            if cc == 0:
+                return accent if starred else muted
+            if cc == 1 or cc == zone_col:
+                return accent
+            return text
+
+        def tick(v):
+            # Suppress itemChanged while we recolour (text content is unchanged).
+            self._populating = True
+            try:
+                for cc in range(cols):
+                    it = self.table.item(row, cc)
+                    if it is not None:
+                        col = QColor(target(cc)); col.setAlphaF(float(v))
+                        it.setForeground(col)
+            except RuntimeError:
+                pass
+            finally:
+                self._populating = False
+
+        tick(0.0)   # hide the row's text immediately so it fades in (no first-frame flash)
+        anim = QVariantAnimation(self.table)
+        anim.setDuration(500)
+        anim.setStartValue(0.0)
+        anim.setEndValue(1.0)
+        anim.setEasingCurve(QEasingCurve.OutCubic)
+        anim.valueChanged.connect(tick)
+        anim.start()
+        self._row_anim = anim
+
     def eventFilter(self, obj, event):
         """Deselect the current cell on any click that isn't on a valid cell — empty table
         space or anywhere off the table. App-wide so clicks on non-focusable widgets count."""
@@ -1830,9 +1931,13 @@ class MainWindow(QMainWindow):
         except RuntimeError:
             pass
 
-    def start_main_listening(self):
+    def start_main_listening(self, since=None):
         """Continue listening within the main extraction view, feeding new vessels into
-        the same (sorted) table rather than a separate window."""
+        the same (sorted) table rather than a separate window. `since` (a datetime) anchors
+        which emails count as new — passed as the extraction start time when auto-started
+        after an extraction, so nothing is missed in the gap; defaults to now() otherwise."""
+        if not isinstance(since, datetime):
+            since = None   # signal-connected calls (e.g. thread.finished) pass junk args
         v, _, _ = validate(None, None, self.email_address, self.folder, self.excel, outlook, self.language)
         if not v:
             self._set_main_status("#f87171", t("extraction_stopped", self.language))
@@ -1841,7 +1946,7 @@ class MainWindow(QMainWindow):
         self._current_excel = resolve_excel_path(self.excel)
         self.listen_thread = QThread()
         self.listen_worker = ExtractWorker(None)
-        generator = process_email(self.email_address, self.folder, self._current_excel, csv_dict, self.listen_worker)
+        generator = process_email(self.email_address, self.folder, self._current_excel, csv_dict, self.listen_worker, since)
         self.listen_worker.generator = generator
         self.listen_worker.moveToThread(self.listen_thread)
         self.listen_worker.new_email.connect(self.add_listening_to_main_table)
@@ -1871,6 +1976,7 @@ class MainWindow(QMainWindow):
                 'listened': True, 'starred': False, 'seq': self._seq_counter,
             })
             self._render_main_table()
+            self._flash_new_row(self._seq_counter)
             self.caption5.setText(f"{t('vessels_extracted', self.language)} {len(self.table_data)}")
         except Exception as e:
             print(f"Error adding listened email to table: {e}")
@@ -1941,7 +2047,9 @@ class MainWindow(QMainWindow):
             self.extheader.setText(t("extraction_complete", self.language))
             self.extheader.setStyleSheet("font: bold 25px;")
             self._render_main_table()
-            self.start_main_listening()
+            # Anchor listening to when the extraction began, so emails that arrived while it
+            # was running are caught (closes the snapshot→listen gap).
+            self.start_main_listening(getattr(self, "_extraction_started", None))
 
         self.btn.setEnabled(True)
         self.extracting_running = False
@@ -2056,74 +2164,54 @@ class MainWindow(QMainWindow):
         dialog.exec()
 
     def start_update_check(self):
+        # Native-style updates: silently check + download in the background, then apply on the
+        # next restart. No prompt, no forced relaunch.
         if not getattr(sys, "frozen", False):
+            return
+        if staged_update_ready():
+            self._mark_update_ready()   # downloaded in a previous session, still waiting
             return
         self._upd_check_thread = QThread()
         self._upd_checker = UpdateChecker()
         self._upd_checker.moveToThread(self._upd_check_thread)
         self._upd_check_thread.started.connect(self._upd_checker.run)
-        self._upd_checker.update_available.connect(self.prompt_update)
+        self._upd_checker.update_available.connect(self._begin_update_download)
         self._upd_checker.update_available.connect(self._upd_check_thread.quit)
         self._upd_check_thread.start()
 
-    def prompt_update(self, version):
-        dialog = QDialog(self)
-        dialog.setWindowTitle("Update available")
-        dialog.setFixedWidth(460)
-        layout = QVBoxLayout(dialog)
-        layout.setContentsMargins(30, 30, 30, 30)
-        layout.setSpacing(20)
-
-        msg = QLabel(f"A new version of Mail AI (v{version}) is available.\n"
-                     f"You're on v{APP_VERSION}. Update now to get the latest features and fixes.")
-        msg.setWordWrap(True)
-        msg.setStyleSheet("font: 16px;")
-        layout.addWidget(msg)
-
-        btn_row = QHBoxLayout()
-        update_btn = QPushButton("Update now")
-        update_btn.setFixedSize(200, 56)
-        update_btn.clicked.connect(lambda: (dialog.accept(), self.do_update()))
-        later_btn = QPushButton("Later")
-        later_btn.setFixedSize(140, 56)
-        later_btn.clicked.connect(dialog.reject)
-        btn_row.addWidget(update_btn)
-        btn_row.addSpacing(16)
-        btn_row.addWidget(later_btn)
-        layout.addLayout(btn_row)
-
-        dialog.exec()
-
-    def do_update(self):
-        self._upd_dialog = QDialog(self)
-        self._upd_dialog.setWindowTitle("Updating Mail AI")
-        self._upd_dialog.setFixedWidth(420)
-        lay = QVBoxLayout(self._upd_dialog)
-        lay.setContentsMargins(28, 28, 28, 28)
-        lbl = QLabel("Downloading the latest version…\nMail AI will restart automatically.")
-        lbl.setWordWrap(True)
-        lbl.setStyleSheet("font: 16px;")
-        lay.addWidget(lbl)
-
+    def _begin_update_download(self, version):
+        # A newer version exists — download + stage it quietly off the UI thread.
         self._upd_thread = QThread()
         self._upd_worker = UpdateWorker()
         self._upd_worker.moveToThread(self._upd_thread)
         self._upd_thread.started.connect(self._upd_worker.run)
-        self._upd_worker.done.connect(self._on_update_done)
+        self._upd_worker.done.connect(self._on_update_downloaded)
+        self._upd_worker.done.connect(self._upd_thread.quit)
         self._upd_thread.start()
-        self._upd_dialog.exec()
 
-    def _on_update_done(self, ok, err):
-        self._upd_thread.quit()
+    def _on_update_downloaded(self, ok, err):
         if ok:
-            QApplication.quit()
+            self._mark_update_ready()
         else:
-            self._upd_dialog.reject()
-            QMessageBox.warning(
-                self, "Update failed",
-                f"Could not update automatically:\n{err}\n\n"
-                f"Please download the latest version from mailai.uk."
+            logger.warning(f"Background update download failed: {err}")
+
+    def _mark_update_ready(self):
+        # Update is staged; it will be applied automatically when the app is restarted.
+        self._update_ready = True
+        try:
+            self.ver.setText("  update ready · restart to apply")
+            self.ver.setToolTip("A new version has been downloaded. "
+                                "Restart Mail AI to apply it.")
+        except Exception:
+            pass
+        try:
+            self.tray.showMessage(
+                "Mail AI — update ready",
+                "A new version has been downloaded. Restart Mail AI to apply it.",
+                QIcon(resource_path("icon.png")), 6000,
             )
+        except Exception:
+            pass
 
     def activate_license(self):
         key = self.license_input.text().strip()
@@ -2400,8 +2488,16 @@ if __name__ == "__main__":
         pass
     app = QApplication(sys.argv)
     app.setWindowIcon(QIcon(resource_path("icon.png")))
+    # Apply any staged update when the app quits, so the next launch runs the new version.
+    app.aboutToQuit.connect(apply_staged_update)
     window = MainWindow()
     window.apply_theme(config.get("theme", "light"))
     window.show()
+    # Dismiss the PyInstaller startup splash (frozen builds with --splash) now the UI is up.
+    try:
+        import pyi_splash
+        pyi_splash.close()
+    except Exception:
+        pass
     window.start_update_check()
     sys.exit(app.exec())

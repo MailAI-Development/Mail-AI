@@ -37,7 +37,7 @@ API_KEY = "REPLACE_BEFORE_BUILD"
 TRIAL_DAYS = 7
 _LICENSE_SECRET = "REPLACE_BEFORE_BUILD"
 
-APP_VERSION = "1.4"
+APP_VERSION = "1.5"
 GITHUB_REPO = "MailAI-Development/Mail-AI"
 UPDATE_DOWNLOAD_URL = f"https://github.com/{GITHUB_REPO}/releases/latest/download/Mail.AI.{APP_VERSION}.exe"
 
@@ -1072,15 +1072,16 @@ def check_for_update():
 
 
 def cleanup_old_update():
-    """Remove the leftover '.old' executable left by a previous self-update."""
+    """Remove leftovers from a previous self-update: the '.old' exe and any partial download."""
     if not getattr(sys, "frozen", False):
         return
-    old_path = sys.executable + ".old"
-    if os.path.exists(old_path):
-        try:
-            os.remove(old_path)
-        except OSError:
-            pass
+    for suffix in (".old", ".part"):
+        p = sys.executable + suffix
+        if os.path.exists(p):
+            try:
+                os.remove(p)
+            except OSError:
+                pass
 
 
 def _latest_exe_url():
@@ -1105,34 +1106,54 @@ def _latest_exe_url():
     return UPDATE_DOWNLOAD_URL
 
 
-def apply_update():
-    """Download the latest exe, replace the running one, and relaunch. Frozen builds only.
-    Raises on failure; on success it has already started the new exe (caller should quit)."""
+def download_update():
+    """Download the latest release exe and stage it next to the running exe (no swap, no
+    relaunch). Downloads to a '.part' file first and only renames to '.new' once complete,
+    so a half-finished download is never mistaken for a ready update. Frozen builds only."""
     if not getattr(sys, "frozen", False):
         raise RuntimeError("Auto-update only applies to the built executable.")
     exe = sys.executable
-    exe_dir = os.path.dirname(exe)
-    new_path = os.path.join(exe_dir, "Mail.AI.new.exe")
-    old_path = exe + ".old"
+    new_path = exe + ".new"
+    part_path = exe + ".part"
 
     download_url = _latest_exe_url()
     with requests.get(download_url, stream=True, timeout=180) as r:
         r.raise_for_status()
-        with open(new_path, "wb") as f:
+        with open(part_path, "wb") as f:
             for chunk in r.iter_content(chunk_size=1 << 16):
                 if chunk:
                     f.write(chunk)
 
-    if os.path.exists(old_path):
-        try:
-            os.remove(old_path)
-        except OSError:
-            pass
-    os.rename(exe, old_path)
-    os.rename(new_path, exe)
+    if os.path.exists(new_path):
+        os.remove(new_path)
+    os.rename(part_path, new_path)
+    logger.info("Update downloaded and staged; will apply on next restart.")
+    return True
 
-    import subprocess
-    subprocess.Popen([exe])
+
+def staged_update_ready():
+    """True if a fully-downloaded update is staged and waiting to be applied."""
+    return getattr(sys, "frozen", False) and os.path.exists(sys.executable + ".new")
+
+
+def apply_staged_update():
+    """Swap a staged '.new' exe into place. Call on app quit — no relaunch needed; the next
+    launch runs the new version. Renaming the running exe is permitted on Windows."""
+    if not staged_update_ready():
+        return False
+    exe = sys.executable
+    new_path = exe + ".new"
+    old_path = exe + ".old"
+    try:
+        if os.path.exists(old_path):
+            os.remove(old_path)
+        os.rename(exe, old_path)      # move the running exe aside
+        os.rename(new_path, exe)      # put the new one in its place
+        logger.info("Staged update applied on exit.")
+        return True
+    except OSError as e:
+        logger.warning(f"Could not apply staged update on exit: {e}")
+        return False
 
 
 def validate_license_key(key: str) -> bool:
@@ -1430,10 +1451,14 @@ def clear_duplicates_if_new_day():
         logger.warning(f"Daily duplicate reset skipped: {e}")
 
 
-def process_email(email_address,folder,excel_path,csv_dict,worker):
+def process_email(email_address, folder, excel_path, csv_dict, worker, start_time=None):
 
     global email_ids
-    start_time = datetime.now()
+    # When listening is auto-started after an extraction, the caller passes the extraction's
+    # start time so this picks up everything from then on — closing the gap between the
+    # extraction's folder snapshot and when listening begins. Defaults to now() otherwise.
+    if start_time is None:
+        start_time = datetime.now()
     pythoncom.CoInitialize()
     try:
         outlook = win32com.client.Dispatch("Outlook.Application").GetNamespace("MAPI")
