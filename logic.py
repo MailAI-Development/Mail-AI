@@ -1162,15 +1162,16 @@ def validate_license_key(key: str) -> bool:
         parts = key.split("-")
         if len(parts) != 3 or parts[0] != "MAILAI":
             return False
-        year_month = parts[1]
-        sig = parts[2]
-        if len(year_month) != 6 or not year_month.isdigit():
+        datestr, sig = parts[1], parts[2]
+        # New keys encode the issue DATE (YYYYMMDD) so a mid-month purchase is valid for a
+        # full month from that day. Old month keys (YYYYMM) are still accepted for continuity.
+        if not datestr.isdigit() or len(datestr) not in (6, 8):
             return False
-        key_date = datetime.strptime(year_month, "%Y%m")
-        if (datetime.now() - key_date).days > 35:
+        key_date = datetime.strptime(datestr, "%Y%m%d" if len(datestr) == 8 else "%Y%m")
+        if (datetime.now() - key_date).days > 35:   # ~a month of access + a few days' grace
             return False
         expected = base64.b32encode(
-            _hmac.new(_LICENSE_SECRET.encode(), year_month.encode(), hashlib.sha256).digest()
+            _hmac.new(_LICENSE_SECRET.encode(), datestr.encode(), hashlib.sha256).digest()
         )[:10].decode()
         return _hmac.compare_digest(sig, expected)
     except Exception:
@@ -1219,6 +1220,34 @@ def is_excel_open(file_path):
         return True
 
 
+def _load_workbook_retry(file_path, attempts=5):
+    """Open a workbook, retrying on transient locks (OneDrive sync, antivirus, or Windows
+    briefly holding the file even after Excel closes)."""
+    last = None
+    for i in range(attempts):
+        try:
+            return openpyxl.load_workbook(file_path)
+        except (PermissionError, OSError) as e:
+            last = e
+            time.sleep(1.5 * (i + 1))
+    raise last
+
+
+def _save_workbook_retry(workbook, file_path, attempts=5):
+    """Save a workbook, retrying on transient file locks (same causes as above). Raises the
+    last error if it never succeeds."""
+    last = None
+    for i in range(attempts):
+        try:
+            workbook.save(file_path)
+            return
+        except (PermissionError, OSError) as e:
+            last = e
+            logger.warning(f"Excel save blocked (attempt {i + 1}/{attempts}): {e}")
+            time.sleep(1.5 * (i + 1))
+    raise last
+
+
 def append_data_excel(file_path, data, specific_datetime, listening, run_header=False):
     headers = ['MV', 'DWT/Built', 'Vessel Open Location', 'Vessel Open Date', 'Zone', 'Sender', 'Subject', 'Received Time']
 
@@ -1232,12 +1261,12 @@ def append_data_excel(file_path, data, specific_datetime, listening, run_header=
         sheet.title = sheet_name
         sheet.append(headers)
         sheet.auto_filter.ref = "A1:H1"
-        workbook.save(file_path)
-        workbook = openpyxl.load_workbook(file_path)
+        _save_workbook_retry(workbook, file_path)
+        workbook = _load_workbook_retry(file_path)
         sheet = workbook[sheet_name]
         fresh_sheet = True
     else:
-        workbook = openpyxl.load_workbook(file_path)
+        workbook = _load_workbook_retry(file_path)
         if sheet_name in workbook.sheetnames:
             sheet = workbook[sheet_name]
         else:
@@ -1271,7 +1300,7 @@ def append_data_excel(file_path, data, specific_datetime, listening, run_header=
     if sheet.max_row >= 1:
         sheet.auto_filter.ref = f"A1:H{sheet.max_row}"
 
-    workbook.save(file_path)
+    _save_workbook_retry(workbook, file_path)
     workbook.close()
 
 
@@ -1290,14 +1319,14 @@ def append_error_message(file_path, sender_email, email_subject, worker=None):
         workbook = openpyxl.Workbook()
         sheet = workbook.active
     else:
-        workbook = openpyxl.load_workbook(file_path)
+        workbook = _load_workbook_retry(file_path)
         sheet = workbook.active
 
     error_message = f"Data not found: Email sender: {sender_email}, Email subject: {email_subject}"
 
     sheet.append([error_message])
 
-    workbook.save(file_path)
+    _save_workbook_retry(workbook, file_path)
     workbook.close()
 
 

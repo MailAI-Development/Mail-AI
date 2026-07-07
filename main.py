@@ -886,7 +886,7 @@ class MainWindow(QMainWindow):
         license_label_w.setStyleSheet("font: 600 16px;")
 
         self.license_input = QLineEdit()
-        self.license_input.setPlaceholderText("MAILAI-YYYYMM-XXXXXXXXXX")
+        self.license_input.setPlaceholderText("MAILAI-YYYYMMDD-XXXXXXXXXX")
         self.license_input.setFixedSize(340, 40)
         self.license_input.setStyleSheet("QLineEdit { font-size: 15px; }")
         self.license_input.setText(cfg.get("license_key", "") if cfg.get("is_pro") else "")
