@@ -50,7 +50,7 @@ APP_TOKEN = _secret("APP_TOKEN")
 TRIAL_DAYS = 7
 _LICENSE_SECRET = _secret("LICENSE_SECRET")
 
-APP_VERSION = "1.5"
+APP_VERSION = "1.6"
 GITHUB_REPO = "MailAI-Development/Mail-AI"
 UPDATE_DOWNLOAD_URL = f"https://github.com/{GITHUB_REPO}/releases/latest/download/Mail.AI.{APP_VERSION}.exe"
 
