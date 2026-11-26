@@ -1,0 +1,4 @@
+# mailai.uk — Netlify serves the static site in website/ (no build step).
+[build]
+  base = "website"
+  publish = "."

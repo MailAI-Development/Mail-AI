@@ -1,0 +1,13 @@
+# Deploy from this folder:  npx wrangler deploy
+# Secrets (once):           npx wrangler secret put OPENAI_API_KEY
+#                           npx wrangler secret put MAILAI_APP_SECRET
+name = "mailai-proxy"
+main = "worker.js"
+compatibility_date = "2026-11-01"
+
+[vars]
+OPENAI_MODEL = "gpt-5.4-nano"
+MAX_INPUT_CHARS = "40000"
+
+[observability]
+enabled = true
