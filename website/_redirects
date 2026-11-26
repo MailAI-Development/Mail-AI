@@ -1,0 +1,3 @@
+# Forward extraction API calls from the app (https://mailai.uk/v1/...) to the proxy.
+# To move the proxy, change the host below and redeploy the site — no app rebuild needed.
+/v1/*  https://mailai-proxy.kelvinai.workers.dev/v1/:splat  200!

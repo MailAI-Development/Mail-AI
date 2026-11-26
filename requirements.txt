@@ -1,0 +1,9 @@
+# Desktop app (Windows only)
+PySide6
+pywin32
+requests
+openpyxl
+pytz
+
+# Build
+pyinstaller

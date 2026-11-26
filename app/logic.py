@@ -32,10 +32,23 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-API_KEY = "REPLACE_BEFORE_BUILD"
+# Secrets are injected at build time from app/_build_secrets.py (gitignored) or env vars —
+# never hardcode them here. See _build_secrets.example.py.
+try:
+    import _build_secrets as _secrets
+except ImportError:
+    _secrets = None
+
+def _secret(name, default=""):
+    return os.environ.get(f"MAILAI_{name}") or getattr(_secrets, name, default)
+
+# Extraction goes through the Mail AI proxy (proxy/proxy_server.py), which holds the
+# OpenAI key server-side. The app only knows the proxy URL and its app token.
+PROXY_URL = _secret("PROXY_URL").rstrip("/")
+APP_TOKEN = _secret("APP_TOKEN")
 
 TRIAL_DAYS = 7
-_LICENSE_SECRET = "REPLACE_BEFORE_BUILD"
+_LICENSE_SECRET = _secret("LICENSE_SECRET")
 
 APP_VERSION = "1.5"
 GITHUB_REPO = "MailAI-Development/Mail-AI"
@@ -55,7 +68,7 @@ def resource_path(relative_path):
         base_path = getattr(sys, "_MEIPASS", os.path.dirname(sys.executable))
     else:
         base_path = os.path.dirname(os.path.abspath(__file__))
-    return os.path.join(base_path, relative_path)
+    return os.path.join(base_path, "assets", relative_path)
 
 def data_path(relative_path):
     if getattr(sys, "frozen", False):
@@ -822,39 +835,41 @@ def extract_details_from_email(preprocessed_body, csv_dict):
             f"Email:\n{preprocessed_body}\n\n"},
         ]
     }
-    api_payload = {
-        "model": "gpt-5.4-nano",
-        "messages": payload["messages"],
-    }
+    if not PROXY_URL or not APP_TOKEN:
+        raise APIError("Proxy not configured (missing PROXY_URL / APP_TOKEN at build time)")
     headers = {
-        "Authorization": f"Bearer {API_KEY}",
+        "X-App-Token": APP_TOKEN,
         "Content-Type": "application/json",
     }
     last_error = None
     for attempt in range(3):
         try:
+            # Long read timeout: a free-tier proxy host may need ~30-60s to wake from idle.
             resp = requests.post(
-                "https://api.openai.com/v1/chat/completions",
-                json=api_payload,
+                f"{PROXY_URL}/v1/extract",
+                json=payload,
                 headers=headers,
-                timeout=(10, 45),
+                timeout=(10, 90),
             )
+            if resp.status_code in (400, 401):
+                # Not transient — bad token or rejected input; retrying won't help.
+                raise APIError(f"proxy rejected request: HTTP {resp.status_code}")
             resp.raise_for_status()
             data = resp.json()
             break
         except (requests.exceptions.RequestException, ValueError) as e:
             last_error = e
-            logger.warning(f"API request failed (attempt {attempt + 1}/3): {e}")
+            logger.warning(f"Proxy request failed (attempt {attempt + 1}/3): {e}")
             if attempt < 2:
                 time.sleep(2 ** attempt)
     else:
         raise APIError(str(last_error))
 
     try:
-        details = data["choices"][0]["message"]["content"].strip()
-    except (KeyError, IndexError, TypeError):
-        logger.warning(f"Unexpected API response shape: {data}")
-        raise APIError("malformed API response")
+        details = data["content"].strip()
+    except (KeyError, TypeError, AttributeError):
+        logger.warning(f"Unexpected proxy response shape: {data}")
+        raise APIError("malformed proxy response")
 
     vessels = details.split('---')
     extracted_vessels = []

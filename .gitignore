@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv*/
+venv/
+
+# Build output
+build/
+dist/
+installer_output/
+
+# Build secrets — never commit
+app/_build_secrets.py
+.env
+.env.*
+
+# Runtime data written next to main.py in dev (user config + email state)
+app/config.json
+app/duplicates.json
+app/email_ids.json
+app/custom_zones.json
+app/zone_misses.log
+*.log
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Wrangler local secrets / state
+.dev.vars
+.wrangler/
