@@ -6,18 +6,27 @@
  *   app  ->  https://mailai.uk/v1/extract  (Netlify forwards /v1/*, see website/_redirects)
  *        ->  this Worker  ->  OpenAI chat completions
  *
- * Request:  POST /v1/extract   header X-App-Token: <APP_TOKEN baked into the app>
- *           body {"messages": [{role: "system"|"user", content: "..."}, ...]}   (max 2)
- * Response: {"content": "<model output>"}
+ * v1 (desktop app v1.6 and earlier; frozen, do not change its behaviour):
+ *   POST /v1/extract   header X-App-Token: <APP_TOKEN baked into the app>
+ *   body {"messages": [{role: "system"|"user", content: "..."}, ...]}   (max 2)
+ *   -> {"content": "<model output>"}
+ *
+ * v2 (web app): the prompt, schema and cleanup live server-side in extract.js.
+ *   POST /v2/extract   header X-App-Token
+ *   body {"subject": "...", "body": "<plain-text email body>"}
+ *   -> {"vessels": [{"name", "dwt_k", "built", "open_location", "open_date"}]}
  *
  * Secrets (Cloudflare dashboard → Worker → Settings → Variables, type "Secret",
  * or `npx wrangler secret put NAME`):
  *   OPENAI_API_KEY      the OpenAI key
  *   MAILAI_APP_SECRET   must equal APP_TOKEN in app/_build_secrets.py
  * Plain vars (optional, defaults in wrangler.toml):
- *   OPENAI_MODEL        default gpt-5.4-nano
+ *   OPENAI_MODEL        v1 model, default gpt-5.4-nano
+ *   OPENAI_MODEL_V2     v2 model, default gpt-5.4-mini
  *   MAX_INPUT_CHARS     default 40000
  */
+
+import { SYSTEM_PROMPT, RESPONSE_FORMAT, trimBody, cleanVessels } from "./extract.js";
 
 const OPENAI_URL = "https://api.openai.com/v1/chat/completions";
 // Netlify gives up on a forwarded request after ~30s; fail cleanly before that.
@@ -43,9 +52,13 @@ async function safeEqual(a, b) {
   return diff === 0;
 }
 
-async function handleExtract(request, env) {
+async function authorized(request, env) {
   const token = request.headers.get("X-App-Token") || "";
-  if (!env.MAILAI_APP_SECRET || !(await safeEqual(token, env.MAILAI_APP_SECRET))) {
+  return Boolean(env.MAILAI_APP_SECRET) && (await safeEqual(token, env.MAILAI_APP_SECRET));
+}
+
+async function handleExtract(request, env) {
+  if (!(await authorized(request, env))) {
     return json(401, { detail: "Unauthorized" });
   }
 
@@ -98,6 +111,58 @@ async function handleExtract(request, env) {
   }
 }
 
+async function handleExtractV2(request, env) {
+  if (!(await authorized(request, env))) {
+    return json(401, { detail: "Unauthorized" });
+  }
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return json(400, { detail: "Invalid JSON" });
+  }
+  const subject = typeof body?.subject === "string" ? body.subject : "";
+  if (typeof body?.body !== "string" || !body.body.trim()) {
+    return json(400, { detail: "Invalid request" });
+  }
+  const text = `Subject: ${subject}
+
+${trimBody(body.body)}`;
+  if (text.length > parseInt(env.MAX_INPUT_CHARS || "40000", 10)) {
+    return json(400, { detail: "Input too large" });
+  }
+
+  try {
+    const resp = await fetch(OPENAI_URL, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${env.OPENAI_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: env.OPENAI_MODEL_V2 || "gpt-5.4-mini",
+        messages: [
+          { role: "system", content: SYSTEM_PROMPT },
+          { role: "user", content: text },
+        ],
+        response_format: RESPONSE_FORMAT,
+      }),
+      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
+    });
+    if (!resp.ok) {
+      console.log(`OpenAI error ${resp.status}: ${(await resp.text()).slice(0, 500)}`);
+      return json(502, { detail: "Upstream error" });
+    }
+    const data = await resp.json();
+    const parsed = JSON.parse(data.choices[0].message.content);
+    return json(200, { vessels: cleanVessels(parsed.vessels) });
+  } catch (e) {
+    // Never log email content; only the error.
+    console.log(`v2 extract failed: ${e}`);
+    return json(502, { detail: "Upstream error" });
+  }
+}
+
 export default {
   async fetch(request, env) {
     const { pathname } = new URL(request.url);
@@ -108,6 +173,10 @@ export default {
     if (pathname === "/v1/extract") {
       if (request.method !== "POST") return json(405, { detail: "Method not allowed" });
       return handleExtract(request, env);
+    }
+    if (pathname === "/v2/extract") {
+      if (request.method !== "POST") return json(405, { detail: "Method not allowed" });
+      return handleExtractV2(request, env);
     }
     return json(404, { detail: "Not found" });
   },
