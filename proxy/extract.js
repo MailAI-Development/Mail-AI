@@ -8,7 +8,7 @@
 
 export const SYSTEM_PROMPT = `You extract OPEN dry-bulk vessel positions from shipbroking emails. Return JSON only.
 
-Output: {"vessels": [{"name", "dwt_k", "built", "open_location", "open_date"}]}
+Output: {"vessels": [{"name", "dwt_k", "built", "open_location", "open_country", "open_date"}]}
 
 Rules:
 - Include every vessel offered as open/available (tonnage lists, "open", "O/A", "ARD", "ETA", ex-shipyard deliveries, newbuildings/TBN).
@@ -23,6 +23,7 @@ Rules:
 - dwt_k: summer deadweight in thousands, rounded to nearest integer (56,669 -> 57). null if not stated.
 - built: 4-digit build/delivery year of the VESSEL. Never use a date from the open position or the email date. null if not stated anywhere.
 - open_location: the port (or region code like CJK/ECI if no port), uppercase, no country, no "OPEN"/"AT" prefix. Correct obvious misspellings.
+- open_country: ISO 3166-1 alpha-2 code of the open port's country (e.g. "UA" for ODESSA, "MX" for MANZANILLO, MEXICO). Use the country written in the email; if none is written, give it only when the port name clearly identifies one country. null if unsure or if open_location is a region.
 - open_date: day/range + 3-letter month, no year, e.g. "25 MAR", "26-27 MAR", "30 MAR-1 APR", "EARLY APR". Use the vessel's open/delivery date, not ETA at a later port.
 - Never guess. Use null when a value is not in the email.`;
 
@@ -42,12 +43,13 @@ export const RESPONSE_FORMAT = {
           items: {
             type: "object",
             additionalProperties: false,
-            required: ["name", "dwt_k", "built", "open_location", "open_date"],
+            required: ["name", "dwt_k", "built", "open_location", "open_country", "open_date"],
             properties: {
               name: { type: "string" },
               dwt_k: nullable("integer"),
               built: nullable("integer"),
               open_location: nullable("string"),
+              open_country: nullable("string"),
               open_date: nullable("string"),
             },
           },
@@ -102,6 +104,9 @@ export function cleanVessels(vessels) {
       dwt_k: Number.isFinite(raw.dwt_k) ? raw.dwt_k : null,
       built: Number.isInteger(raw.built) && raw.built >= 1950 && raw.built <= 2100 ? raw.built : null,
       open_location: raw.open_location ? String(raw.open_location).toUpperCase().trim() || null : null,
+      open_country: /^[A-Z]{2}$/.test(String(raw.open_country ?? "").trim().toUpperCase())
+        ? String(raw.open_country).trim().toUpperCase()
+        : null,
       open_date: cleanDate(raw.open_date),
     };
     if (!v.name) continue;

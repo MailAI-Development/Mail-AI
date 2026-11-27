@@ -4,11 +4,11 @@
  * Plan:  "pro"     Ko-fi subscription for the user's email, or a valid MAILAI-… key entered by the user
  *        "trial"   within TRIAL_DAYS of first use
  *        "expired" otherwise
- * Daily cap on extracted emails: trial 100, pro 1,000 (counted before the OpenAI call).
+ * Daily cap on extracted emails: trial 100, pro 1,500 (counted before the OpenAI call).
  */
 
 export const TRIAL_DAYS = 7;
-export const DAILY_CAP = { trial: 100, pro: 1000, expired: 0 };
+export const DAILY_CAP = { trial: 100, pro: 1500, expired: 0 };
 const DAY_MS = 864e5;
 const KEY_VALID_DAYS = 35; // same as the desktop app: ~a month of access + a few days' grace
 

@@ -164,7 +164,7 @@ function Workspace() {
     () =>
       rows.map((r) => ({
         ...r,
-        zone: zonesReady ? zoneFor(r.open_location) : "",
+        zone: zonesReady ? zoneFor(r.open_location, r.open_country) : "",
         dateKey: openDateKey(r.open_date, r.received),
       })),
     [rows, zonesReady, zoneVersion], // zoneVersion: recompute after an override
@@ -185,7 +185,7 @@ function Workspace() {
         (r) =>
           (zoneFilter.size === 0 || zoneFilter.has(r.zone)) &&
           (!q ||
-            [r.name, r.open_location, r.zone, r.open_date, r.from, r.subject, r.dwt_k && `${r.dwt_k}K`, r.built]
+            [r.name, r.open_location, r.open_country, r.zone, r.open_date, r.from, r.subject, r.dwt_k && `${r.dwt_k}K`, r.built]
               .some((v) => v != null && String(v).toUpperCase().includes(q))),
       )
       .sort((a, b) => {
@@ -302,7 +302,10 @@ function Workspace() {
                     <td className="strong">{r.name}</td>
                     <td className="num">{r.dwt_k != null ? `${r.dwt_k}K` : "–"}</td>
                     <td className="num">{r.built ?? "–"}</td>
-                    <td>{r.open_location ?? "–"}</td>
+                    <td>
+                      {r.open_location ?? "–"}
+                      {r.open_country && <span className="cc" title="Country">{r.open_country}</span>}
+                    </td>
                     <td>
                       {editing === r.open_location && r.open_location ? (
                         <select
