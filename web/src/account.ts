@@ -1,7 +1,5 @@
 import { idToken } from "./auth";
 
-export const SUBSCRIBE_URL = "https://ko-fi.com/mailaiuk/tiers";
-
 export type Plan = "starter" | "pro" | "max";
 export type Interval = "monthly" | "annual";
 
@@ -71,15 +69,4 @@ export async function fetchStatus(): Promise<Status> {
   const res = await api("/v2/me");
   if (!res.ok) throw new Error(`Couldn't load your account (${res.status})`);
   return res.json();
-}
-
-export async function redeemKey(key: string): Promise<Status> {
-  const res = await api("/v2/license", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ key }),
-  });
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body.detail || `Couldn't check that key (${res.status})`);
-  return body as Status;
 }

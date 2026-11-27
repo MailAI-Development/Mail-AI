@@ -2,7 +2,7 @@ import { useCallback, useRef, useState } from "react";
 import { loadStripe, type Stripe } from "@stripe/stripe-js";
 import { EmbeddedCheckout, EmbeddedCheckoutProvider } from "@stripe/react-stripe-js";
 import {
-  confirmCheckout, openBillingPortal, PLAN_INFO, startCheckout, SUBSCRIBE_URL,
+  confirmCheckout, openBillingPortal, PLAN_INFO, startCheckout,
   type Interval, type Plan, type Status,
 } from "./account";
 
@@ -36,12 +36,13 @@ export function Plans({ status, onPaid, onClose }: { status: Status; onPaid: (s:
   const current = status.pro_source === "stripe" ? status.plan : null;
 
   if (!status.can_checkout || !PUBLISHABLE_KEY) {
-    // In-app checkout not open for this account yet: keep the existing Ko-fi route.
+    // In-app checkout isn't open for this account yet (Stripe still in test mode).
     return (
       <section className="plans">
-        <h2>Upgrade</h2>
-        <p className="muted">Subscribe on Ko-fi with the email you sign in with ({status.email}) and Mail AI unlocks automatically.</p>
-        <p><a className="button primary" href={SUBSCRIBE_URL} target="_blank" rel="noreferrer">Subscribe on Ko-fi</a></p>
+        <h2>Plans</h2>
+        <p className="muted">
+          Paid plans open shortly. To subscribe now, email <a href="mailto:hello@mailai.uk">hello@mailai.uk</a> from {status.email ?? "the address you sign in with"}.
+        </p>
       </section>
     );
   }

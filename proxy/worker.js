@@ -1,44 +1,23 @@
 /**
- * Mail AI extraction proxy (Cloudflare Worker)
- * --------------------------------------------
- * Holds the OpenAI key server-side so it never ships inside the desktop app.
+ * Mail AI API (Cloudflare Worker), reached at https://mailai.uk/v2/* (Netlify forwards it, see website/_redirects).
+ * Holds the OpenAI key server-side; the web app at mailai.uk/app is its only client.
  *
- *   app  ->  https://mailai.uk/v1/extract  (Netlify forwards /v1/*, see website/_redirects)
- *        ->  this Worker  ->  OpenAI chat completions
+ *   POST /v2/extract   Authorization: Bearer <Microsoft ID token>  (web app)  or X-App-Token (eval scripts)
+ *                      body {"subject", "body"} -> {"vessels": [...]}; prompt, schema and cleanup in extract.js
+ *   GET  /v2/me        plan, trial and usage for the signed-in user (account.js)
+ *   POST /v2/checkout, /v2/checkout/confirm, /v2/billing-portal, /stripe/webhook   Stripe billing (stripe.js)
+ *   POST /kofi/webhook legacy: records Ko-fi payments (kofi.js)
+ *   /v1/extract, /v2/license   retired 2026-11-27 (desktop app, licence keys): 410 Gone
  *
- * v1 (desktop app v1.6 and earlier; frozen, do not change its behaviour):
- *   POST /v1/extract   header X-App-Token: <APP_TOKEN baked into the app>
- *   body {"messages": [{role: "system"|"user", content: "..."}, ...]}   (max 2)
- *   -> {"content": "<model output>"}
- *
- * v2 (web app): the prompt, schema and cleanup live server-side in extract.js.
- *   POST /v2/extract   header Authorization: Bearer <Microsoft ID token>   (web app)
- *                      or X-App-Token                                   (eval scripts)
- *   body {"subject": "...", "body": "<plain-text email body>"}
- *   -> {"vessels": [{"name", "dwt_k", "built", "open_location", "open_date"}]}
- *
- * Secrets (Cloudflare dashboard → Worker → Settings → Variables, type "Secret",
- * or `npx wrangler secret put NAME`):
- *   OPENAI_API_KEY      the OpenAI key
- *   MAILAI_APP_SECRET   must equal APP_TOKEN in app/_build_secrets.py
- * Plain vars (optional, defaults in wrangler.toml):
- *   OPENAI_MODEL        v1 model, default gpt-5.4-nano
- *   OPENAI_MODEL_V2     v2 model, default gpt-5.4-mini
- *   MS_CLIENT_ID        Microsoft Entra app (client) ID of the web app; v2 accepts its ID tokens
- * Secrets for the web app's accounts (see account.js):
- *   LICENSE_SECRET            same as the desktop app's; validates MAILAI-… keys entered on the web
- *   KOFI_VERIFICATION_TOKEN   from Ko-fi → Settings → API; authenticates POST /kofi/webhook
- *   RESEND_API_KEY            Resend key; /kofi/webhook emails each subscriber this month's licence key (kofi.js)
- *   STRIPE_SECRET_KEY         Stripe API key (sk_test_… while testing, sk_live_… when live)
- *   STRIPE_WEBHOOK_SECRET     signing secret of the Stripe webhook endpoint (whsec_…) → POST /stripe/webhook
- * Var STRIPE_CHECKOUT_ALLOW: comma-separated emails allowed to buy ("*" = everyone). See stripe.js.
- * D1 binding DB (migrations/): users (incl. Stripe plan), subscriptions (Ko-fi), usage.
- *   MAX_INPUT_CHARS     default 40000
+ * Secrets: OPENAI_API_KEY; MAILAI_APP_SECRET (X-App-Token for eval scripts); KOFI_VERIFICATION_TOKEN;
+ *          STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, STRIPE_PORTAL_CONFIG, STRIPE_CHECKOUT_ALLOW.
+ * Vars (wrangler.toml): OPENAI_MODEL_V2 (default gpt-5.4-mini), MAX_INPUT_CHARS, MS_CLIENT_ID.
+ * D1 binding DB (migrations/): users (incl. Stripe plan), subscriptions (Ko-fi), usage, grants.
  */
 
 import { SYSTEM_PROMPT, RESPONSE_FORMAT, trimBody, cleanVessels } from "./extract.js";
 import { verifyMicrosoftToken } from "./auth.js";
-import { getOrCreateUser, getStatus, consume, refund, checkLicenseKey, saveLicenseKey } from "./account.js";
+import { getOrCreateUser, getStatus, consume, refund } from "./account.js";
 import { handleKofiPayment } from "./kofi.js";
 import { checkoutAllowed, createCheckout, confirmCheckout, createPortal, verifyWebhook, subscriptionIdFromEvent, syncSubscription } from "./stripe.js";
 
@@ -74,61 +53,6 @@ async function authorized(request, env) {
   return Boolean(env.MAILAI_APP_SECRET) && (await safeEqual(token, env.MAILAI_APP_SECRET));
 }
 
-async function handleExtract(request, env) {
-  if (!(await authorized(request, env))) {
-    return json(401, { detail: "Unauthorized" });
-  }
-
-  let body;
-  try {
-    body = await request.json();
-  } catch {
-    return json(400, { detail: "Invalid JSON" });
-  }
-
-  const messages = body && Array.isArray(body.messages) ? body.messages : [];
-  if (messages.length === 0 || messages.length > 2) {
-    return json(400, { detail: "Invalid request" });
-  }
-  for (const m of messages) {
-    if (!m || typeof m !== "object" || !["system", "user"].includes(m.role) || typeof m.content !== "string") {
-      return json(400, { detail: "Invalid request" });
-    }
-  }
-
-  // Limit input size to control costs.
-  const maxChars = parseInt(env.MAX_INPUT_CHARS || "40000", 10);
-  const totalChars = messages.reduce((n, m) => n + m.content.length, 0);
-  if (totalChars > maxChars) {
-    return json(400, { detail: "Input too large" });
-  }
-
-  try {
-    const resp = await fetch(OPENAI_URL, {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${env.OPENAI_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: env.OPENAI_MODEL || "gpt-5.4-nano",
-        messages: messages.map(({ role, content }) => ({ role, content })),
-      }),
-      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
-    });
-    if (!resp.ok) {
-      console.log(`OpenAI error ${resp.status}: ${(await resp.text()).slice(0, 500)}`);
-      return json(502, { detail: "Upstream error" });
-    }
-    const data = await resp.json();
-    return json(200, { content: data.choices[0].message.content });
-  } catch (e) {
-    console.log(`OpenAI request failed: ${e}`);
-    return json(502, { detail: "Upstream error" });
-  }
-}
-
-/** Signed-in web-app user from "Authorization: Bearer <Microsoft ID token>", or null. */
 async function webUser(request, env) {
   const bearer = (request.headers.get("Authorization") || "").match(/^Bearer\s+(.+)$/i)?.[1];
   return bearer ? verifyMicrosoftToken(bearer, env.MS_CLIENT_ID) : null;
@@ -138,22 +62,6 @@ async function handleMe(request, env) {
   const user = await webUser(request, env);
   if (!user) return json(401, { detail: "Unauthorized" });
   return json(200, await getStatus(env, await getOrCreateUser(env, user)));
-}
-
-async function handleLicense(request, env) {
-  const user = await webUser(request, env);
-  if (!user) return json(401, { detail: "Unauthorized" });
-  let body;
-  try {
-    body = await request.json();
-  } catch {
-    return json(400, { detail: "Invalid JSON" });
-  }
-  const expires = await checkLicenseKey(body?.key, env.LICENSE_SECRET);
-  if (!expires) return json(400, { detail: "That key isn't valid or has expired." });
-  const row = await getOrCreateUser(env, user);
-  await saveLicenseKey(env, row.user_id, expires);
-  return json(200, await getStatus(env, { ...row, key_expires: expires }));
 }
 
 // Ko-fi posts application/x-www-form-urlencoded with one field, `data`, holding the JSON payload.
@@ -311,10 +219,8 @@ export default {
     if (request.method === "GET" && (pathname === "/health" || pathname === "/v1/health")) {
       return json(200, { ok: true });
     }
-    if (pathname === "/v1/extract") {
-      if (request.method !== "POST") return json(405, { detail: "Method not allowed" });
-      return handleExtract(request, env);
-    }
+    // Retired 2026-11-27: the desktop app (v1) and licence-key redemption.
+    if (pathname === "/v1/extract" || pathname === "/v2/license") return json(410, { detail: "The Mail AI desktop app and licence keys have been retired. Use Mail AI at https://mailai.uk/app" });
     if (pathname === "/v2/extract") {
       if (request.method !== "POST") return json(405, { detail: "Method not allowed" });
       return handleExtractV2(request, env);
@@ -322,10 +228,6 @@ export default {
     if (pathname === "/v2/me") {
       if (request.method !== "GET") return json(405, { detail: "Method not allowed" });
       return handleMe(request, env);
-    }
-    if (pathname === "/v2/license") {
-      if (request.method !== "POST") return json(405, { detail: "Method not allowed" });
-      return handleLicense(request, env);
     }
     if (request.method === "POST" && pathname === "/v2/checkout") return handleCheckout(request, env);
     if (request.method === "POST" && pathname === "/v2/checkout/confirm") return handleCheckoutConfirm(request, env);
