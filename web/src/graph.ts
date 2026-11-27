@@ -1,4 +1,5 @@
 import { graphToken } from "./auth";
+import { DEMO_FOLDER, demoFolder, demoMessages } from "./demo";
 
 const GRAPH = "https://graph.microsoft.com/v1.0";
 
@@ -42,6 +43,7 @@ export async function listFolders(): Promise<Folder[]> {
     }
   }
   await walk("/me/mailFolders", 0);
+  if (import.meta.env.DEV) out.push(demoFolder); // local testing only
   return out;
 }
 
@@ -65,6 +67,7 @@ type RawMessage = {
 
 /** Messages in a folder received in [since, until), newest first, page by page. */
 export async function* listMessages(folderId: string, since: Date, until: Date): AsyncGenerator<Message[]> {
+  if (import.meta.env.DEV && folderId === DEMO_FOLDER) return yield* demoMessages(since, until);
   const filter = `receivedDateTime ge ${since.toISOString()} and receivedDateTime lt ${until.toISOString()}`;
   let next: string | undefined =
     `/me/mailFolders/${folderId}/messages?$filter=${encodeURIComponent(filter)}` +

@@ -263,3 +263,22 @@ button.icon:hover:not(:disabled) { background: var(--chart-sunk); color: var(--h
 .plan-name { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
 
 strong, b { font-weight: 600; }
+
+/* Listening and the saved-positions line */
+button.listen.on { border-color: var(--hull); }
+.listening { margin: var(--space-3) 0 0; }
+.check { display: inline-flex; align-items: center; gap: var(--space-2); color: var(--hull-muted); cursor: pointer; }
+.check input { margin: 0; accent-color: var(--hull); }
+.db-line { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; margin-top: var(--space-3); }
+.db-line select { height: 28px; padding: 0 var(--space-2); font: var(--text-small); }
+.db-line .link { margin-left: auto; }
+/* A position that arrived while listening */
+tbody tr.fresh td:first-child { box-shadow: inset 3px 0 0 var(--hull); }
+/* "×3" on a vessel: opens its earlier sightings underneath */
+button.sightings {
+  height: 22px; padding: 0 var(--space-2); margin-left: var(--space-2); vertical-align: 1px;
+  font: var(--text-small); color: var(--hull-muted); font-variant-numeric: tabular-nums;
+}
+button.sightings.on { background: var(--hull); border-color: var(--hull); color: var(--chart); }
+tbody tr.sighting td { background: var(--chart-sunk); font-size: 13px; }
+tbody tr.sighting td:first-child { padding-left: var(--space-6); }
