@@ -1,4 +1,20 @@
-# mailai.uk — Netlify serves the static site in website/ (no build step).
+# mailai.uk — Netlify serves website/ (static marketing site) plus the web app built from web/ into website/app/.
 [build]
-  base = "website"
-  publish = "."
+  command = "npm --prefix web ci && npm --prefix web run build"
+  publish = "website"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+# MSAL redirect bridge: must never be cached (Microsoft guidance).
+[[headers]]
+  for = "/app/redirect.html"
+  [headers.values]
+    Cache-Control = "no-store"
+
+[[headers]]
+  for = "/app/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    X-Frame-Options = "DENY"

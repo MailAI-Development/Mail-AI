@@ -9,6 +9,15 @@ compatibility_date = "2026-11-01"
 OPENAI_MODEL = "gpt-5.4-nano"      # v1 (desktop app)
 OPENAI_MODEL_V2 = "gpt-5.4-mini"   # v2 (web app)
 MAX_INPUT_CHARS = "40000"
+MS_CLIENT_ID = "aff69668-2d41-411e-aa31-b677720065b3"   # Entra app registration (public ID, not a secret)
+FROM_EMAIL = "Mail AI <licences@mailai.uk>"   # sender for licence-key emails (Resend, verified domain)
 
 [observability]
 enabled = true
+
+# Accounts, Ko-fi subscriptions and daily usage for the web app (see account.js, migrations/).
+[[d1_databases]]
+binding = "DB"
+database_name = "mailai"
+database_id = "695109f5-9124-4fad-a232-c6571dc57f6c"
+migrations_dir = "migrations"

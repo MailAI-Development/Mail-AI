@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Signing in…</title>
+  </head>
+  <body>
+    <!-- MSAL v5 redirect bridge: hands Microsoft's sign-in response back to the app, then returns to it.
+         Must stay free of app code. -->
+    <script type="module">
+      import { broadcastResponseToMainFrame } from "@azure/msal-browser/redirect-bridge";
+      broadcastResponseToMainFrame().catch((error) => {
+        console.error("Sign-in redirect failed", error);
+        document.body.textContent = "Sign-in failed. Close this window and try again.";
+      });
+    </script>
+  </body>
+</html>
