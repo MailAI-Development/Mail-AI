@@ -153,3 +153,6 @@ a.button.primary { background: var(--accent); color: var(--accent-text); }
 .keyform label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--muted); }
 .keyform .row { display: flex; gap: 8px; }
 .keyform input { flex: 1; max-width: 340px; font-family: ui-monospace, monospace; text-transform: uppercase; }
+
+/* Country code next to the open port */
+.cc { margin-left: 6px; font-size: 11px; color: var(--muted); letter-spacing: 0.04em; }

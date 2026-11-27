@@ -5,6 +5,7 @@ export type Vessel = {
   dwt_k: number | null;
   built: number | null;
   open_location: string | null;
+  open_country?: string | null; // ISO code; absent from older API versions
   open_date: string | null;
 };
 

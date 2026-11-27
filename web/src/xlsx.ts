@@ -5,6 +5,7 @@ export type ExportRow = {
   dwt_k: number | null;
   built: number | null;
   open_location: string | null;
+  open_country?: string | null;
   zone: string;
   open_date: string | null;
   received: string;
@@ -13,8 +14,8 @@ export type ExportRow = {
   webLink: string;
 };
 
-const HEADERS = ["Vessel", "DWT (K)", "Built", "Open", "Zone", "Open date", "Received", "From", "Email"];
-const WIDTHS = [26, 9, 7, 22, 10, 14, 17, 30, 60];
+const HEADERS = ["Vessel", "DWT (K)", "Built", "Open", "Country", "Zone", "Open date", "Received", "From", "Email"];
+const WIDTHS = [26, 9, 7, 22, 9, 10, 14, 17, 30, 60];
 
 // Excel's filter/sort dropdowns on the header row (not built into write-excel-file).
 function autoFilter(lastRow: number): Feature<File | Blob | ArrayBuffer> {
@@ -41,6 +42,7 @@ export async function downloadXlsx(rows: ExportRow[], fileName: string) {
       r.dwt_k != null ? { value: r.dwt_k, type: Number } : null,
       r.built != null ? { value: r.built, type: Number } : null,
       r.open_location ? { value: r.open_location, type: String } : null,
+      r.open_country ? { value: r.open_country, type: String } : null,
       r.zone ? { value: r.zone, type: String } : null,
       r.open_date ? { value: r.open_date, type: String } : null,
       { value: new Date(r.received), type: Date, format: "dd mmm yyyy hh:mm" },
