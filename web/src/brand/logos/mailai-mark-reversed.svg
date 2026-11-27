@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Mail AI">
+  <defs><mask id="crease-b" maskUnits="userSpaceOnUse" x="0" y="0" width="64" height="64"><rect width="64" height="64" fill="#fff"></rect><path d="M1 32.4 L32 44.6 L64 32.4" fill="none" stroke="#000" stroke-width="3.4" stroke-linejoin="miter"></path></mask></defs>
+  <g fill="#F4F1EA" mask="url(#crease-b)">
+    <rect x="8" y="20" width="13.5" height="11.67" rx="1"></rect>
+    <rect x="11.5" y="14" width="4" height="7" rx="1"></rect>
+    <path d="M4 31 H61 L53.5 49 H12 A6 6 0 0 1 6.2 44.6 Z"></path>
+  </g>
+  <circle cx="49.67" cy="20.33" r="4" fill="#F0663C"></circle>
+</svg>
