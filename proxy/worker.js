@@ -29,7 +29,10 @@
  *   LICENSE_SECRET            same as the desktop app's; validates MAILAI-… keys entered on the web
  *   KOFI_VERIFICATION_TOKEN   from Ko-fi → Settings → API; authenticates POST /kofi/webhook
  *   RESEND_API_KEY            Resend key; /kofi/webhook emails each subscriber this month's licence key (kofi.js)
- * D1 binding DB (migrations/): users, subscriptions, usage.
+ *   STRIPE_SECRET_KEY         Stripe API key (sk_test_… while testing, sk_live_… when live)
+ *   STRIPE_WEBHOOK_SECRET     signing secret of the Stripe webhook endpoint (whsec_…) → POST /stripe/webhook
+ * Var STRIPE_CHECKOUT_ALLOW: comma-separated emails allowed to buy ("*" = everyone). See stripe.js.
+ * D1 binding DB (migrations/): users (incl. Stripe plan), subscriptions (Ko-fi), usage.
  *   MAX_INPUT_CHARS     default 40000
  */
 
@@ -37,6 +40,10 @@ import { SYSTEM_PROMPT, RESPONSE_FORMAT, trimBody, cleanVessels } from "./extrac
 import { verifyMicrosoftToken } from "./auth.js";
 import { getOrCreateUser, getStatus, consume, refund, checkLicenseKey, saveLicenseKey } from "./account.js";
 import { handleKofiPayment } from "./kofi.js";
+import { checkoutAllowed, createCheckout, confirmCheckout, createPortal, verifyWebhook, subscriptionIdFromEvent, syncSubscription } from "./stripe.js";
+
+// Where Stripe sends people back to. The client says which; only these are accepted.
+const APP_URLS = ["https://mailai.uk/app/", "http://localhost:5173/"];
 
 const OPENAI_URL = "https://api.openai.com/v1/chat/completions";
 // Netlify gives up on a forwarded request after ~30s; fail cleanly before that.
@@ -164,6 +171,75 @@ async function handleKofi(request, env) {
   return json(200, { ok: true, result: await handleKofiPayment(env, d) });
 }
 
+async function readJson(request) {
+  try {
+    return await request.json();
+  } catch {
+    return null;
+  }
+}
+
+async function handleCheckout(request, env) {
+  const user = await webUser(request, env);
+  if (!user) return json(401, { detail: "Unauthorized" });
+  const body = await readJson(request);
+  const row = await getOrCreateUser(env, user);
+  if (!checkoutAllowed(env, row.email)) return json(403, { detail: "Checkout isn't open yet." });
+  const appUrl = APP_URLS.includes(body?.app_url) ? body.app_url : APP_URLS[0];
+  try {
+    return json(200, { clientSecret: await createCheckout(env, row, body?.plan, body?.interval, appUrl) });
+  } catch (e) {
+    console.log(`checkout failed: ${e}`);
+    return json(400, { detail: "Couldn't start checkout." });
+  }
+}
+
+async function handleCheckoutConfirm(request, env) {
+  const user = await webUser(request, env);
+  if (!user) return json(401, { detail: "Unauthorized" });
+  const body = await readJson(request);
+  const row = await getOrCreateUser(env, user);
+  try {
+    await confirmCheckout(env, row, String(body?.session_id || ""));
+  } catch (e) {
+    console.log(`checkout confirm failed: ${e}`);
+    return json(400, { detail: "Couldn't confirm that payment." });
+  }
+  return json(200, await getStatus(env, await getOrCreateUser(env, user)));
+}
+
+async function handlePortal(request, env) {
+  const user = await webUser(request, env);
+  if (!user) return json(401, { detail: "Unauthorized" });
+  const body = await readJson(request);
+  const row = await getOrCreateUser(env, user);
+  try {
+    return json(200, { url: await createPortal(env, row, APP_URLS.includes(body?.app_url) ? body.app_url : APP_URLS[0]) });
+  } catch (e) {
+    console.log(`portal failed: ${e}`);
+    return json(400, { detail: "Couldn't open subscription settings." });
+  }
+}
+
+// Stripe webhooks: verify the signature over the raw body, then re-read the subscription from Stripe.
+async function handleStripeWebhook(request, env) {
+  const raw = await request.text();
+  if (!(await verifyWebhook(raw, request.headers.get("Stripe-Signature"), env.STRIPE_WEBHOOK_SECRET))) {
+    return json(400, { detail: "Bad signature" });
+  }
+  const event = JSON.parse(raw);
+  const subId = subscriptionIdFromEvent(event);
+  if (subId) {
+    try {
+      await syncSubscription(env, subId, event.data?.object?.client_reference_id);
+    } catch (e) {
+      console.log(`stripe webhook ${event.type} sync failed: ${e}`);
+      return json(500, { detail: "Sync failed" }); // Stripe retries
+    }
+  }
+  return json(200, { received: true });
+}
+
 async function handleExtractV2(request, env) {
   const user = await webUser(request, env);
   if (!user && !(await authorized(request, env))) {
@@ -251,6 +327,10 @@ export default {
       if (request.method !== "POST") return json(405, { detail: "Method not allowed" });
       return handleLicense(request, env);
     }
+    if (request.method === "POST" && pathname === "/v2/checkout") return handleCheckout(request, env);
+    if (request.method === "POST" && pathname === "/v2/checkout/confirm") return handleCheckoutConfirm(request, env);
+    if (request.method === "POST" && pathname === "/v2/billing-portal") return handlePortal(request, env);
+    if (request.method === "POST" && pathname === "/stripe/webhook") return handleStripeWebhook(request, env);
     if (pathname === "/kofi/webhook") {
       if (request.method !== "POST") return json(405, { detail: "Method not allowed" });
       return handleKofi(request, env);

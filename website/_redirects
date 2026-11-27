@@ -3,3 +3,4 @@
 /v1/*  https://mailai-proxy.kelvinai.workers.dev/v1/:splat  200!
 /v2/*  https://mailai-proxy.kelvinai.workers.dev/v2/:splat  200!
 /kofi/*  https://mailai-proxy.kelvinai.workers.dev/kofi/:splat  200!
+/stripe/*  https://mailai-proxy.kelvinai.workers.dev/stripe/:splat  200!

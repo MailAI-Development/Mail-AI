@@ -6,7 +6,8 @@ import { extractVessels, looksRelevant, pool, type Vessel } from "./extract";
 import { loadZones, setOverride, UNKNOWN, zoneCodes, zoneFor } from "./zones";
 import { openDateKey } from "./dates";
 import { downloadXlsx } from "./xlsx";
-import { fetchStatus, LimitError, redeemKey, SUBSCRIBE_URL, type Status } from "./account";
+import { confirmCheckout, fetchStatus, LimitError, openBillingPortal, PLAN_INFO, redeemKey, type Status } from "./account";
+import { Plans } from "./Plans";
 
 type Row = Vessel & { key: string; received: string; from: string; subject: string; webLink: string };
 type View = Row & { zone: string; dateKey: number | null };
@@ -95,11 +96,20 @@ function Workspace() {
   const [editing, setEditing] = useState<string | null>(null); // open_location whose zone is being edited
   const [status, setStatus] = useState<Status | null>(null);
   const [limitHit, setLimitHit] = useState<LimitError["reason"] | null>(null);
+  const [showPlans, setShowPlans] = useState(false);
+  const [notice, setNotice] = useState<"paid" | null>(null);
   const stop = useRef(false);
 
   useEffect(() => {
     loadZones().finally(() => setZonesReady(true));
-    fetchStatus().then(setStatus).catch(() => {});
+    const params = new URLSearchParams(window.location.search);
+    const session = params.get("checkout");
+    if (session) {
+      history.replaceState(null, "", window.location.pathname); // don't re-confirm on reload
+      confirmCheckout(session).then((s) => (setStatus(s), setNotice("paid"))).catch(() => fetchStatus().then(setStatus));
+    } else {
+      fetchStatus().then(setStatus).catch(() => {});
+    }
   }, []);
 
   useEffect(() => {
@@ -250,10 +260,19 @@ function Workspace() {
             Extract positions
           </button>
         )}
-        {status && <PlanLine s={status} />}
+        {status && <PlanLine s={status} onUpgrade={() => setShowPlans(true)} />}
       </section>
 
+      {notice === "paid" && status && status.pro_source === "stripe" && (
+        <p className="notice ok">
+          You're on {PLAN_INFO[status.plan as keyof typeof PLAN_INFO]?.name ?? status.plan}. Thanks for subscribing; a receipt is on its way by email.
+          <button className="link" onClick={() => setNotice(null)}>Dismiss</button>
+        </p>
+      )}
       {status?.plan === "expired" && <Paywall s={status} onUnlocked={setStatus} />}
+      {showPlans && status && status.plan !== "expired" && (
+        <Plans status={status} onPaid={(s) => (setStatus(s), setShowPlans(false), setNotice("paid"))} onClose={() => setShowPlans(false)} />
+      )}
       {limitHit === "daily_cap" && status && (
         <p className="notice">
           You've reached today's limit of {status.daily_cap.toLocaleString()} position emails. Results so far are below;
@@ -367,16 +386,28 @@ function ScanStatus({ p, running, vessels }: { p: Progress; running: boolean; ve
   );
 }
 
-function PlanLine({ s }: { s: Status }) {
+function PlanLine({ s, onUpgrade }: { s: Status; onUpgrade: () => void }) {
   const usage = `${s.used_today.toLocaleString()} / ${s.daily_cap.toLocaleString()} today`;
+  const paid = s.plan === "starter" || s.plan === "pro" || s.plan === "max";
   return (
     <div className="plan" title="Position emails extracted today (UTC). Other emails are skipped and don't count.">
-      {s.plan === "pro" && <><span className="badge pro">Pro</span><span className="muted">{usage}</span></>}
+      {paid && (
+        <>
+          <span className="badge pro">{PLAN_INFO[s.plan as keyof typeof PLAN_INFO].name}</span>
+          <span className="muted">{usage}</span>
+          {s.cancel_at_end && s.pro_until && <span className="muted">ends {new Date(s.pro_until).toLocaleDateString()}</span>}
+          {s.can_manage ? (
+            <button className="link" onClick={() => openBillingPortal()}>Manage</button>
+          ) : (
+            s.plan !== "max" && <button className="link" onClick={onUpgrade}>Upgrade</button>
+          )}
+        </>
+      )}
       {s.plan === "trial" && (
         <>
           <span className="badge">Trial · {s.trial_days_left} {s.trial_days_left === 1 ? "day" : "days"} left</span>
           <span className="muted">{usage}</span>
-          <a href={SUBSCRIBE_URL} target="_blank" rel="noreferrer">Upgrade</a>
+          <button className="link" onClick={onUpgrade}>Upgrade</button>
         </>
       )}
       {s.plan === "expired" && <span className="badge off">Trial ended</span>}
@@ -403,16 +434,11 @@ function Paywall({ s, onUnlocked }: { s: Status; onUnlocked: (s: Status) => void
   return (
     <section className="paywall">
       <h2>Your free trial has ended</h2>
-      <p>
-        Subscribe on Ko-fi to keep extracting positions. Use <strong>{s.email ?? "the email you sign in with"}</strong> when
-        you pay and Mail AI unlocks automatically, usually within a minute.
-      </p>
-      <p>
-        <a className="button primary" href={SUBSCRIBE_URL} target="_blank" rel="noreferrer">Subscribe — £9/month</a>
-      </p>
+      <p>Pick a plan to keep extracting positions.</p>
+      <Plans status={s} onPaid={onUnlocked} />
       <form onSubmit={submit} className="keyform">
         <label>
-          Paid with a different email? Enter the licence key from your Ko-fi email
+          Already subscribed on Ko-fi with a different email? Enter the licence key from your Ko-fi email
           <span className="row">
             <input value={key} onChange={(e) => setKey(e.target.value)} placeholder="MAILAI-…" spellCheck={false} />
             <button disabled={!key.trim() || busy}>{busy ? "Checking…" : "Unlock"}</button>
