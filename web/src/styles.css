@@ -156,3 +156,31 @@ a.button.primary { background: var(--accent); color: var(--accent-text); }
 
 /* Country code next to the open port */
 .cc { margin-left: 6px; font-size: 11px; color: var(--muted); letter-spacing: 0.04em; }
+
+/* Plans + embedded checkout */
+.plans { margin-top: 16px; }
+.paywall .plans { margin-top: 8px; }
+.plans-head { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 14px; }
+.plans-head h2 { font-size: 17px; margin: 0; }
+.plans-head .link:last-child { margin-left: auto; }
+.toggle { display: inline-flex; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.toggle button { border: 0; border-radius: 0; height: 30px; font-size: 13px; }
+.toggle button + button { border-left: 1px solid var(--line); }
+.toggle button.on { background: var(--accent); color: var(--accent-text); }
+.toggle button span { font-size: 11px; opacity: 0.8; margin-left: 4px; }
+.plan-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; margin-bottom: 12px; }
+.plan-card {
+  display: flex; flex-direction: column; gap: 6px; padding: 18px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+}
+.plan-card.featured { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+.plan-card h3 { margin: 0; font-size: 15px; }
+.plan-card .price { margin: 4px 0 0; font-size: 26px; font-weight: 650; letter-spacing: -0.02em; }
+.plan-card .price span { font-size: 13px; font-weight: 400; color: var(--muted); margin-left: 2px; }
+.plan-card .cap { margin: 6px 0 0; font-weight: 550; }
+.plan-card p { margin: 0; }
+.plan-card button { margin-top: auto; }
+.small { font-size: 12px; }
+.checkout { background: #fff; border: 1px solid var(--line); border-radius: var(--radius); padding: 8px; min-height: 420px; }
+.notice.ok { background: color-mix(in srgb, var(--accent) 8%, var(--panel)); border-color: color-mix(in srgb, var(--accent) 30%, var(--line)); display: flex; gap: 12px; align-items: center; }
+.notice.ok .link { margin-left: auto; }
