@@ -12,9 +12,11 @@
   <script>try { if (localStorage.getItem('mailai-theme') === 'dark') document.documentElement.setAttribute('data-theme', 'dark'); } catch (e) {}</script>
   <link rel="preload" href="brand/fonts/Switzer-400.woff2" as="font" type="font/woff2" crossorigin />
   <link rel="preload" href="brand/fonts/Switzer-600.woff2" as="font" type="font/woff2" crossorigin />
+  <script>if (!matchMedia('(prefers-reduced-motion: reduce)').matches) { document.documentElement.classList.add('reveal'); setTimeout(function () { if (!window.__revealReady) document.documentElement.classList.remove('reveal'); }, 3000); }</script>
   <link rel="stylesheet" href="site.css" />
   <script src="theme.js" defer></script>
   <script src="smooth-scroll.js" defer></script>
+  <script src="reveal.js" defer></script>
 </head>
 <body>
   <header class="site-header">
@@ -180,10 +182,6 @@
           <details>
             <summary>Can I change plan or cancel?</summary>
             <p>Yes, at any time, from Manage in the app. Upgrades apply straight away, and if you cancel you keep access until the end of the period you've paid for.</p>
-          </details>
-          <details>
-            <summary>I use the Windows desktop app. What happens to it?</summary>
-            <p>It keeps working for existing customers, but new features are going into the web app. The desktop download is <a href="download.html">still available</a>.</p>
           </details>
         </div>
       </div>

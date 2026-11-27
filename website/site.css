@@ -198,3 +198,23 @@ code { font: inherit; font-weight: 500; }
 .hero .facts { display: block; }
 .hero .facts::before { content: none; }
 @media (max-width: 900px) { .split { grid-template-columns: 1fr; } }
+
+/* Fade-and-rise reveal, once (reveal.js). Only when html.reveal is set, i.e. motion allowed and script expected. */
+html.reveal :is(.hero h1, .hero .lede, .hero .ctas, .hero .facts, .preview, .section-head, .steps li,
+  .split .title, .points li, .billing, .plan, .pricing-note, .faq details, .cta-band, .doc > *) {
+  opacity: 0;
+  transform: translateY(14px);
+  transition: opacity 0.7s cubic-bezier(0.2, 0.7, 0.2, 1), transform 0.7s cubic-bezier(0.2, 0.7, 0.2, 1);
+  transition-delay: var(--reveal-delay, 0ms);
+}
+html.reveal :is(.hero h1, .hero .lede, .hero .ctas, .hero .facts, .preview, .section-head, .steps li,
+  .split .title, .points li, .billing, .plan, .pricing-note, .faq details, .cta-band, .doc > *).in {
+  opacity: 1;
+  transform: none;
+}
+/* The hero arrives as one short sequence on open. */
+html.reveal .hero h1 { --reveal-delay: 0ms; }
+html.reveal .hero .lede { --reveal-delay: 90ms; }
+html.reveal .hero .ctas { --reveal-delay: 180ms; }
+html.reveal .hero .facts { --reveal-delay: 240ms; }
+html.reveal .preview { --reveal-delay: 320ms; }

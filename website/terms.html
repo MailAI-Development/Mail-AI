@@ -8,9 +8,11 @@
   <meta name="theme-color" content="#f4f1ea" />
   <link rel="icon" type="image/svg+xml" href="brand/logos/mailai-mark.svg" />
   <script>try { if (localStorage.getItem('mailai-theme') === 'dark') document.documentElement.setAttribute('data-theme', 'dark'); } catch (e) {}</script>
+  <script>if (!matchMedia('(prefers-reduced-motion: reduce)').matches) { document.documentElement.classList.add('reveal'); setTimeout(function () { if (!window.__revealReady) document.documentElement.classList.remove('reveal'); }, 3000); }</script>
   <link rel="stylesheet" href="site.css" />
   <script src="theme.js" defer></script>
   <script src="smooth-scroll.js" defer></script>
+  <script src="reveal.js" defer></script>
 </head>
 <body>
   <header class="site-header">
