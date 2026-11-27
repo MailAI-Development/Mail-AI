@@ -31,3 +31,7 @@ Thumbs.db
 # Wrangler local secrets / state
 .dev.vars
 .wrangler/
+
+# Node
+node_modules/
+website/app/
