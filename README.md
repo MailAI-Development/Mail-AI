@@ -40,7 +40,7 @@ The app never holds an OpenAI key. For each email it sends the trimmed text to t
 
 ```powershell
 python -m venv .venv; .venv\Scripts\activate
-pip install -r requirements.txt
+pip install -r app\requirements.txt
 copy app\_build_secrets.example.py app\_build_secrets.py   # then fill in
 python app\main.py
 ```
