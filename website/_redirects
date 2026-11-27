@@ -4,3 +4,8 @@
 /v2/*  https://mailai-proxy.kelvinai.workers.dev/v2/:splat  200!
 /kofi/*  https://mailai-proxy.kelvinai.workers.dev/kofi/:splat  200!
 /stripe/*  https://mailai-proxy.kelvinai.workers.dev/stripe/:splat  200!
+
+# Old desktop download pages (removed): send people to the home page.
+/download.html  /  301
+/download       /  301
+/thanks.html    /  301
