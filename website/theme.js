@@ -1,74 +1,42 @@
-/* Mail AI — shared site behaviour: theme toggle, mobile nav, scroll reveal.
-   The initial theme is set by a tiny inline snippet in each page's <head> to
-   avoid a flash; this file wires up the toggle and the rest after load. */
+/* mailai.uk: theme toggle (light by default, shared with the app via the same key) and the pricing toggle.
+   Each page's <head> sets the stored theme before paint to avoid a flash. */
 (function () {
-  var STORAGE_KEY = 'mailai-theme';
+  var KEY = 'mailai-theme';
+  var root = document.documentElement;
+  var current = function () { return root.getAttribute('data-theme') === 'dark' ? 'dark' : 'light'; };
 
-  function currentTheme() {
-    return document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
-  }
+  var SUN = '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>';
+  var MOON = '<path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"/>';
 
-  function applyTheme(theme) {
-    if (theme === 'dark') {
-      document.documentElement.setAttribute('data-theme', 'dark');
-    } else {
-      document.documentElement.removeAttribute('data-theme');
-    }
-    try { localStorage.setItem(STORAGE_KEY, theme); } catch (e) {}
-  }
-
-  function init() {
-    /* Theme toggle button(s) */
+  function paintToggles() {
     document.querySelectorAll('.theme-toggle').forEach(function (btn) {
-      btn.addEventListener('click', function () {
-        applyTheme(currentTheme() === 'dark' ? 'light' : 'dark');
-      });
+      var toDark = current() === 'light';
+      btn.setAttribute('aria-label', toDark ? 'Switch to dark theme' : 'Switch to light theme');
+      btn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + (toDark ? MOON : SUN) + '</svg>';
+    });
+  }
+
+  function setTheme(t) {
+    root.setAttribute('data-theme', t);
+    try { localStorage.setItem(KEY, t); } catch (e) {}
+    paintToggles();
+  }
+
+  document.addEventListener('DOMContentLoaded', function () {
+    paintToggles();
+    document.querySelectorAll('.theme-toggle').forEach(function (btn) {
+      btn.addEventListener('click', function () { setTheme(current() === 'light' ? 'dark' : 'light'); });
     });
 
-    /* Mobile nav */
-    var navToggle = document.getElementById('navToggle');
-    var navLinks = document.getElementById('navLinks');
-    if (navToggle && navLinks) {
-      navToggle.addEventListener('click', function () {
-        navToggle.classList.toggle('active');
-        navLinks.classList.toggle('open');
-      });
-      navLinks.querySelectorAll('a').forEach(function (a) {
-        a.addEventListener('click', function () {
-          navToggle.classList.remove('active');
-          navLinks.classList.remove('open');
-        });
+    /* Pricing: monthly / annual */
+    var buttons = document.querySelectorAll('[data-billing]');
+    function showBilling(period) {
+      buttons.forEach(function (b) { b.setAttribute('aria-pressed', String(b.getAttribute('data-billing') === period)); });
+      document.querySelectorAll('[data-monthly]').forEach(function (el) {
+        el.textContent = el.getAttribute(period === 'annual' ? 'data-annual' : 'data-monthly');
       });
     }
-
-    /* Scroll reveal */
-    var revealEls = document.querySelectorAll('.reveal, .feature');
-    if (revealEls.length && 'IntersectionObserver' in window) {
-      var obs = new IntersectionObserver(function (entries) {
-        entries.forEach(function (e) {
-          if (e.isIntersecting) e.target.classList.add('visible');
-          else e.target.classList.remove('visible');
-        });
-      }, { threshold: 0.12 });
-      revealEls.forEach(function (el) { obs.observe(el); });
-    }
-
-    /* Subtle grid parallax (no smoothing delay) */
-    var ticking = false;
-    window.addEventListener('scroll', function () {
-      if (!ticking) {
-        requestAnimationFrame(function () {
-          document.body.style.setProperty('--grid-shift', (-window.scrollY * 0.08) + 'px');
-          ticking = false;
-        });
-        ticking = true;
-      }
-    }, { passive: true });
-  }
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
-  } else {
-    init();
-  }
+    buttons.forEach(function (b) { b.addEventListener('click', function () { showBilling(b.getAttribute('data-billing')); }); });
+    if (buttons.length) showBilling('annual');
+  });
 })();

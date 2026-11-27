@@ -9,10 +9,11 @@ compatibility_date = "2026-11-01"
 OPENAI_MODEL = "gpt-5.4-nano"      # v1 (desktop app)
 OPENAI_MODEL_V2 = "gpt-5.4-mini"   # v2 (web app)
 MAX_INPUT_CHARS = "40000"
+# Set as Worker secrets (they differ between Stripe test and live mode, so not fixed here):
+#   STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, STRIPE_PORTAL_CONFIG (bpc_… from scripts/stripe_setup.mjs),
+#   STRIPE_CHECKOUT_ALLOW (comma-separated emails allowed to buy, "*" = everyone)
 MS_CLIENT_ID = "aff69668-2d41-411e-aa31-b677720065b3"   # Entra app registration (public ID, not a secret)
 FROM_EMAIL = "Mail AI <licences@mailai.uk>"   # sender for licence-key emails (Resend, verified domain)
-STRIPE_CHECKOUT_ALLOW = ""   # emails allowed to buy while testing, comma-separated; "*" when live
-STRIPE_PORTAL_CONFIG = ""    # bpc_… printed by scripts/stripe_setup.mjs
 
 [observability]
 enabled = true

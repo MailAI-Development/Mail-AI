@@ -1,92 +1,76 @@
-<!DOCTYPE html>
-<html lang="en">
+<!doctype html>
+<html lang="en" data-theme="light">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="description" content="Download Mail AI — turn shipbroking emails into a sorted Excel automatically." />
-  <title>Download — Mail AI</title>
-
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Desktop app · Mail AI</title>
+  <meta name="description" content="The Mail AI Windows desktop app, for existing customers." />
+  <meta name="theme-color" content="#f4f1ea" />
+  <link rel="icon" type="image/svg+xml" href="brand/logos/mailai-mark.svg" />
   <script>try { if (localStorage.getItem('mailai-theme') === 'dark') document.documentElement.setAttribute('data-theme', 'dark'); } catch (e) {}</script>
-
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='4' fill='%2322d3ee'/><circle cx='16' cy='16' r='11' fill='none' stroke='%2326272b' stroke-width='1.5'/></svg>" />
   <link rel="stylesheet" href="site.css" />
   <script src="theme.js" defer></script>
 </head>
 <body>
-  <nav>
-    <a href="index.html" class="nav-logo"><span class="nav-logo-dot"></span> Mail AI</a>
-    <div class="nav-right">
-      <ul class="nav-links" id="navLinks">
-        <li><a href="index.html#how">How it works</a></li>
-        <li><a href="index.html#features">Features</a></li>
-        <li><a href="index.html#pricing">Pricing</a></li>
-        <li><a href="privacy.html">Privacy</a></li>
-        <li><a href="download.html" class="nav-cta">Download</a></li>
-      </ul>
-      <button class="theme-toggle" id="themeToggle" aria-label="Toggle dark mode">
-        <svg class="icon-moon" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-        <svg class="icon-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
-      </button>
-      <button class="nav-toggle" id="navToggle" aria-label="Menu"><span></span><span></span><span></span></button>
-    </div>
-  </nav>
-
-  <header class="dl wrap">
-    <div>
-      <p class="eyebrow">Get started</p>
-      <h1>Download<br>Mail AI</h1>
-      <p class="dl-sub">One executable, no installation. Run it, connect your Outlook, and start your free 7-day trial in seconds.</p>
-      <a href="thanks.html" class="btn-primary">
-        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v13M12 16l-5-5M12 16l5-5"/><path d="M4 21h16"/></svg>
-        Download for Windows
+  <header class="site-header">
+    <div class="wrap">
+      <a href="/" class="lockup" aria-label="Mail AI home">
+        <img class="for-light" src="brand/logos/mailai-lockup.svg" alt="Mail AI" width="98" height="32" />
+        <img class="for-dark" src="brand/logos/mailai-lockup-reversed.svg" alt="Mail AI" width="98" height="32" />
       </a>
-      <div class="dl-meta">Windows 10+ · Portable · ~75 MB</div>
-      <div class="dl-ver">Latest version · v1.6</div>
-    </div>
-    <div class="req">
-      <div class="req-title">System requirements</div>
-      <ul>
-        <li>Windows 10 or later</li>
-        <li>Microsoft Outlook (classic desktop app)</li>
-        <li>Internet connection</li>
-      </ul>
+      <nav aria-label="Main">
+        <a href="/#how">How it works</a>
+        <a href="/#pricing">Pricing</a>
+        <a href="privacy.html">Privacy</a>
+      </nav>
+      <div class="actions">
+        <button class="icon-btn theme-toggle" type="button" aria-label="Switch theme"></button>
+        <a class="signin" href="/app/">Sign in</a>
+        <a class="btn primary small" href="/app/">Start free trial</a>
+      </div>
     </div>
   </header>
 
-  <section class="dl-page-section wrap">
-    <h2>Common questions</h2>
-    <div class="faq-list">
-      <div class="faq-item">
-        <div class="faq-q">Is my data sent to external servers?</div>
-        <div class="faq-a">The relevant text from matching emails is sent to OpenAI's API for extraction. No data is sent to or stored by Mail AI — see the <a href="privacy.html">Privacy</a> page for full details.</div>
-      </div>
-      <div class="faq-item">
-        <div class="faq-q">Do I need to install anything else?</div>
-        <div class="faq-a">No. Mail AI is a single portable executable. You just need Outlook already installed on your PC and an active internet connection.</div>
-      </div>
-      <div class="faq-item">
-        <div class="faq-q">Does it work with the new Outlook?</div>
-        <div class="faq-a">Mail AI connects to the classic Outlook desktop app. Outlook on the web and the new Outlook app aren't supported yet — switch off "New Outlook" to use the classic version.</div>
-      </div>
-      <div class="faq-item">
-        <div class="faq-q">How does the free trial work?</div>
-        <div class="faq-a">You get full access for 7 days from first launch — no card required. After that, it's £9/month to keep going. <a href="index.html#pricing">See pricing</a>.</div>
-      </div>
-    </div>
-  </section>
+  <main class="wrap">
+    <article class="doc">
+      <h1 class="title">Mail AI for Windows</h1>
+      <p class="lede">
+        The original desktop app, for existing customers. New features are going into the
+        <a href="/app/">web app</a>, which works in any browser with Microsoft 365 or Outlook.com and needs no install.
+      </p>
+      <p><a class="btn" href="thanks.html">Download for Windows</a></p>
+      <p class="small muted" style="margin-top: var(--space-3)">Windows 10 or later · portable, no installer · about 75 MB</p>
 
-  <footer>
-    <div>Mail AI · mailai.uk</div>
-    <div class="footer-links">
-      <a href="index.html#features">Features</a>
-      <a href="index.html#pricing">Pricing</a>
-      <a href="download.html">Download</a>
-      <a href="privacy.html">Privacy</a>
+      <h2>Requirements</h2>
+      <ul>
+        <li>Windows 10 or later</li>
+        <li>The classic Outlook desktop app (not the new Outlook or Outlook on the web)</li>
+        <li>An internet connection</li>
+      </ul>
+
+      <h2>Licence keys</h2>
+      <p>
+        If you have a licence key, enter it in the app under <em>Settings, Pro License</em>.
+      </p>
+
+      <h2>Your data</h2>
+      <p>See the <a href="privacy.html">privacy page</a> for what the desktop app sends and keeps.</p>
+    </article>
+  </main>
+  <footer class="site-footer">
+    <div class="wrap">
+      <a href="/" class="lockup" aria-label="Mail AI home">
+        <img class="for-light" src="brand/logos/mailai-lockup.svg" alt="Mail AI" width="74" height="24" />
+        <img class="for-dark" src="brand/logos/mailai-lockup-reversed.svg" alt="Mail AI" width="74" height="24" />
+      </a>
+      <nav aria-label="Footer">
+        <a href="/#pricing">Pricing</a>
+        <a href="privacy.html">Privacy</a>
+        <a href="terms.html">Terms</a>
+        <a href="mailto:hello@mailai.uk">hello@mailai.uk</a>
+      </nav>
+      <span class="copy">© 2026 Mail AI</span>
     </div>
-    <div>© 2026 Mail AI</div>
   </footer>
 </body>
 </html>

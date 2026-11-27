@@ -81,7 +81,10 @@ export function Plans({ status, onPaid, onClose }: { status: Status; onPaid: (s:
           const price = interval === "annual" ? info.annual : info.monthly;
           return (
             <div key={p} className={p === "pro" ? "plan-card featured" : "plan-card"}>
-              <h3>{info.name}</h3>
+              <div className="plan-name">
+                <h3>{info.name}</h3>
+                {p === "pro" && <span className="badge">Most popular</span>}
+              </div>
               <p className="price">£{price}<span>/{interval === "annual" ? "year" : "month"}</span></p>
               {interval === "annual" && <p className="muted small">£{(info.annual / 12).toFixed(2)} a month, billed yearly</p>}
               <p className="cap">{info.cap.toLocaleString()} position emails a day</p>
@@ -100,7 +103,7 @@ export function Plans({ status, onPaid, onClose }: { status: Status; onPaid: (s:
       </div>
       {err && <p className="warn">{err}</p>}
       <p className="muted small">
-        Cancel any time; you keep access until the end of the period you've paid for. Emails that aren't position lists
+        Cancel at any time; you keep access to Mail AI until the end of the period you've paid for. Don't worry – emails that aren't position lists
         are skipped and don't count towards the daily limit.
       </p>
     </section>

@@ -8,6 +8,8 @@ import { openDateKey } from "./dates";
 import { downloadXlsx } from "./xlsx";
 import { confirmCheckout, fetchStatus, LimitError, openBillingPortal, PLAN_INFO, redeemKey, type Status } from "./account";
 import { Plans } from "./Plans";
+import { Mark, Ping, ThemeToggle, Wake } from "./Brand";
+import { currentTheme, setTheme } from "./theme";
 
 type Row = Vessel & { key: string; received: string; from: string; subject: string; webLink: string };
 type View = Row & { zone: string; dateKey: number | null };
@@ -24,6 +26,12 @@ export default function App() {
   const [phase, setPhase] = useState<"loading" | "out" | "in" | "error">("loading");
   const [account, setAccount] = useState<AccountInfo | null>(null);
   const [authError, setAuthError] = useState("");
+  const [theme, setThemeState] = useState(currentTheme());
+  const toggleTheme = () => {
+    const next = theme === "light" ? "dark" : "light";
+    setTheme(next);
+    setThemeState(next);
+  };
 
   useEffect(() => {
     initAuth()
@@ -40,13 +48,16 @@ export default function App() {
   return (
     <div className="shell">
       <header className="bar">
-        <span className="brand">Mail AI</span>
-        {account && (
-          <span className="who">
-            {account.username}
-            <button className="link" onClick={() => signOut()}>Sign out</button>
-          </span>
-        )}
+        <Mark size={36} />
+        <span className="who">
+          {account && (
+            <>
+              {account.username}
+              <button className="link" onClick={() => signOut()}>Sign out</button>
+            </>
+          )}
+          <ThemeToggle theme={theme} onToggle={toggleTheme} />
+        </span>
       </header>
       {phase === "loading" && <p className="center muted">Loading…</p>}
       {phase === "error" && (
@@ -63,18 +74,12 @@ export default function App() {
 
 function SignedOut() {
   return (
-    <main className="center narrow">
-      <h1>Open positions from your inbox</h1>
-      <p className="muted">
-        Pick a mail folder and a date range. Mail AI reads the tonnage and position lists in it and returns every open
-        vessel as one table: name, DWT, build year, open port and date.
-      </p>
+    <main className="welcome">
+      <Mark size={88} />
+      <h1 className="title">Welcome to Mail AI</h1>
+      <p className="lede">Start getting vessel positions out of your inbox.</p>
       <button className="primary big" onClick={() => signIn()}>Sign in with Microsoft</button>
-      <ul className="facts">
-        <li>Read-only access to your mail. Mail AI can't send, move or delete anything.</li>
-        <li>Runs in your browser. Emails are processed to extract positions and are not stored.</li>
-        <li>Works with Microsoft 365 and Outlook.com accounts.</li>
-      </ul>
+      <p className="small muted about"><a href="https://mailai.uk/">What is Mail AI?</a></p>
     </main>
   );
 }
@@ -94,6 +99,7 @@ function Workspace() {
   const [zonesReady, setZonesReady] = useState(false);
   const [zoneVersion, setZoneVersion] = useState(0); // bumps when the user overrides a port's zone
   const [editing, setEditing] = useState<string | null>(null); // open_location whose zone is being edited
+  const [selected, setSelected] = useState<string | null>(null); // row key: the vessel you're on
   const [status, setStatus] = useState<Status | null>(null);
   const [limitHit, setLimitHit] = useState<LimitError["reason"] | null>(null);
   const [showPlans, setShowPlans] = useState(false);
@@ -265,7 +271,7 @@ function Workspace() {
 
       {notice === "paid" && status && status.pro_source === "stripe" && (
         <p className="notice ok">
-          You're on {PLAN_INFO[status.plan as keyof typeof PLAN_INFO]?.name ?? status.plan}. Thanks for subscribing; a receipt is on its way by email.
+          Thank you for subscribing to {PLAN_INFO[status.plan as keyof typeof PLAN_INFO]?.name ?? status.plan}! A receipt is on its way to your inbox.
           <button className="link" onClick={() => setNotice(null)}>Dismiss</button>
         </p>
       )}
@@ -275,23 +281,33 @@ function Workspace() {
       )}
       {limitHit === "daily_cap" && status && (
         <p className="notice">
-          You've reached today's limit of {status.daily_cap.toLocaleString()} position emails. Results so far are below;
-          the limit resets at midnight UTC.
+          You've reached today's limit of {status.daily_cap.toLocaleString()} position emails. Results so far are shown below.
+          Your limit will reset at midnight UTC.
         </p>
       )}
 
       {progress && <ScanStatus p={progress} running={running} vessels={rows.length} />}
 
+      {progress && !running && rows.length === 0 && progress.checked > 0 && (
+        <section className="empty">
+          <Wake />
+          <p>No open positions found in {progress.relevant ? `${progress.relevant} position emails` : `${progress.checked} emails`}.</p>
+          <p className="muted small">Try a wider date range or another folder.</p>
+        </section>
+      )}
+
       {rows.length > 0 && (
         <section className="results">
           <div className="results-bar">
             <input
-              className="filter" placeholder="Search vessel, port, sender…" value={filter}
+              className="filter" placeholder="Search for a vessel, port, sender…" value={filter}
               onChange={(e) => setFilter(e.target.value)}
             />
-            <span className="muted">{shown.length === rows.length ? `${rows.length} vessels` : `${shown.length} of ${rows.length}`}</span>
+            <span className="muted small">
+              {shown.length === rows.length ? `${rows.length} positions` : `${shown.length} of ${rows.length} positions`}
+            </span>
             <button onClick={() => downloadXlsx(shown, `Mail AI positions ${day(new Date())}.xlsx`)} disabled={!shown.length}>
-              Download Excel
+              Export to Excel
             </button>
           </div>
           {zonesReady && zoneCounts.length > 1 && (
@@ -317,7 +333,10 @@ function Workspace() {
               </thead>
               <tbody>
                 {shown.map((r) => (
-                  <tr key={r.key}>
+                  <tr
+                    key={r.key} aria-selected={selected === r.key}
+                    onClick={(e) => (e.target as HTMLElement).closest("a,button,select") || setSelected(r.key)}
+                  >
                     <td className="strong">{r.name}</td>
                     <td className="num">{r.dwt_k != null ? `${r.dwt_k}K` : "–"}</td>
                     <td className="num">{r.built ?? "–"}</td>
@@ -367,17 +386,27 @@ function Workspace() {
 
 function ScanStatus({ p, running, vessels }: { p: Progress; running: boolean; vessels: number }) {
   const pct = p.relevant ? Math.round((100 * p.done) / p.relevant) : running ? 0 : 100;
+  const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString()} ${n === 1 ? one : many}`;
   return (
-    <section className="status">
+    <section className="status" aria-live="polite">
       <div className="meter"><div style={{ width: `${pct}%` }} /></div>
       <p>
-        {running ? "Working · " : "Done · "}
-        {p.checked} emails checked · {p.relevant} position emails · {p.done} processed · {vessels} vessels found
-        {p.failed.length > 0 && <span className="warn"> · {p.failed.length} failed</span>}
+        {running ? (
+          <>
+            <Ping /> Extracting {p.done.toLocaleString()} of {plural(p.relevant, "position email")}
+            <span className="muted"> · {plural(p.checked, "email")} checked</span>
+          </>
+        ) : (
+          <>
+            {plural(vessels, "position")} found from {plural(p.relevant, "email")}.
+            <span className="muted"> {plural(p.checked, "email")} checked; the rest weren't position lists.</span>
+          </>
+        )}
+        {p.failed.length > 0 && <span className="error"> {plural(p.failed.length, "email")} couldn't be read.</span>}
       </p>
       {p.failed.length > 0 && (
         <details>
-          <summary>Show failures</summary>
+          <summary>Show which</summary>
           <ul>{p.failed.map((f, i) => <li key={i}>{f.subject}: {f.error}</li>)}</ul>
         </details>
       )}

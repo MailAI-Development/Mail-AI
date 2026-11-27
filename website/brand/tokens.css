@@ -1,0 +1,131 @@
+/* Mail AI — generated from tokens.json */
+:root, [data-theme="light"] {
+  --chart: #f4f1ea; /* Page background. Warm chart-paper in light, deep hull navy in dark. Foundation colour #1. */
+  --chart-raised: #fbfaf6; /* Cards, panels, table rows, inputs — anything sitting on chart. */
+  --chart-sunk: #e9e4d8; /* Wells, table headers, code-free inset areas, the selected row in a list. */
+  --hull: #0f1e2e; /* Primary text and the logo ink. 14.9:1 on chart (light), 14.4:1 (dark). Foundation colour #2. */
+  --hull-muted: #4a5868; /* Secondary text, captions, table metadata. ≥5.7:1 on chart, chart-raised and chart-sunk in both themes. */
+  --line: #d6d0c2; /* Hairlines: dividers, table rules, card borders (1px). Decorative only — never the sole border of a control. */
+  --line-strong: #7c8289; /* Borders of inputs, checkboxes and other controls (≥3.4:1 on chart and chart-raised in both themes). */
+  --signal: #e4572e; /* The accent — buoy orange. Fills (primary button, the logo's position ping, focus ring, a live/new marker). 3.3:1 on light chart: fills and icons ≥24px only, never body text there. Use once or twice per view. */
+  --signal-ink: #b5401c; /* Orange as text or a small icon: links, the active tab label, a count. 5.0:1 on chart (light), 7.0:1 (dark). */
+  --signal-soft: #fae5dc; /* Tinted background behind signal-ink text — a 'new' badge, a highlighted extracted field. signal-ink on it: 4.7:1 light, 5.9:1 dark. */
+  --on-signal: #0f1e2e; /* Text and icons on a signal fill. Always hull navy, never white (white fails at 3.6:1). 4.6:1 light, 5.4:1 dark. */
+  --focus-ring: #e4572e; /* Keyboard focus: 2px chart-coloured gap, then a 2px signal ring. */
+  --state-ok: #2a7352; /* State only: a position extracted and confirmed. Text or icon ≥5:1 on chart. Pair with a word or a tick, never colour alone. */
+  --state-error: #b3261e; /* State only: parse failed, missing field. 5.8:1 light, 6.8:1 dark. Pair with a word or icon. */
+}
+[data-theme="dark"] {
+  --chart: #0f1e2e;
+  --chart-raised: #172a3d;
+  --chart-sunk: #0a1520;
+  --hull: #f1ede4;
+  --hull-muted: #a3afbb;
+  --line: #26394d;
+  --line-strong: #6b7f92;
+  --signal: #f0663c;
+  --signal-ink: #f58a63;
+  --signal-soft: #3a2620;
+  --on-signal: #0f1e2e;
+  --focus-ring: #f0663c;
+  --state-ok: #5fbf92;
+  --state-error: #f2867c;
+}
+:root {
+  --space-1: 4px; /* Icon-to-label gap, badge padding. */
+  --space-2: 8px; /* Tight stacks, chip gaps, table cell vertical padding. */
+  --space-3: 12px; /* Control padding, list row padding. */
+  --space-4: 16px; /* Card padding, gutter between related controls. */
+  --space-6: 24px; /* Gap between cards and sections inside a panel. */
+  --space-8: 32px; /* Page margins in the desktop app. */
+  --space-12: 48px; /* Section breaks on the website. */
+  --radius-sm: 3px; /* Badges, checkboxes, table cell highlights. */
+  --radius-md: 6px; /* Buttons, inputs, cards. The default. */
+  --radius-lg: 12px; /* Dialogs, the app icon tile (at 64px use 14px), large marketing panels. */
+  --font-sans: "Switzer", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --text-display: 600 56px/60px var(--font-sans);
+  --text-title: 600 32px/38px var(--font-sans);
+  --text-heading: 600 22px/28px var(--font-sans);
+  --text-subheading: 600 17px/24px var(--font-sans);
+  --text-body: 400 15px/22px var(--font-sans);
+  --text-body-strong: 500 15px/22px var(--font-sans);
+  --text-small: 400 13px/18px var(--font-sans);
+  --text-label: 600 12px/16px var(--font-sans);
+}
+.display {
+  font-family: var(--font-sans);
+  font-size: 56px;
+  line-height: 60px;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+}
+.title {
+  font-family: var(--font-sans);
+  font-size: 32px;
+  line-height: 38px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.heading {
+  font-family: var(--font-sans);
+  font-size: 22px;
+  line-height: 28px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.subheading {
+  font-family: var(--font-sans);
+  font-size: 17px;
+  line-height: 24px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+.body {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 22px;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+.body-strong {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 22px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+.small {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+.label {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+@font-face {
+  font-family: "Switzer";
+  src: url("fonts/Switzer-400.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Switzer";
+  src: url("fonts/Switzer-500.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Switzer";
+  src: url("fonts/Switzer-600.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
