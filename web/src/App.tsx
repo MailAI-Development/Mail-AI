@@ -6,7 +6,7 @@ import { extractVessels, looksRelevant, pool, type Vessel } from "./extract";
 import { loadZones, setOverride, UNKNOWN, zoneCodes, zoneFor } from "./zones";
 import { openDateKey } from "./dates";
 import { downloadXlsx } from "./xlsx";
-import { confirmCheckout, fetchStatus, LimitError, openBillingPortal, PLAN_INFO, redeemKey, type Status } from "./account";
+import { confirmCheckout, fetchStatus, LimitError, openBillingPortal, PLAN_INFO, type Status } from "./account";
 import { Plans } from "./Plans";
 import { Mark, Ping, ThemeToggle, Wake } from "./Brand";
 import { currentTheme, setTheme } from "./theme";
@@ -445,36 +445,11 @@ function PlanLine({ s, onUpgrade }: { s: Status; onUpgrade: () => void }) {
 }
 
 function Paywall({ s, onUnlocked }: { s: Status; onUnlocked: (s: Status) => void }) {
-  const [key, setKey] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState("");
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    setBusy(true);
-    setErr("");
-    try {
-      onUnlocked(await redeemKey(key));
-    } catch (x) {
-      setErr((x as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
   return (
     <section className="paywall">
       <h2>Your free trial has ended</h2>
       <p>Pick a plan to keep extracting positions.</p>
       <Plans status={s} onPaid={onUnlocked} />
-      <form onSubmit={submit} className="keyform">
-        <label>
-          Already subscribed on Ko-fi with a different email? Enter the licence key from your Ko-fi email
-          <span className="row">
-            <input value={key} onChange={(e) => setKey(e.target.value)} placeholder="MAILAI-…" spellCheck={false} />
-            <button disabled={!key.trim() || busy}>{busy ? "Checking…" : "Unlock"}</button>
-          </span>
-        </label>
-        {err && <p className="warn">{err}</p>}
-      </form>
     </section>
   );
 }

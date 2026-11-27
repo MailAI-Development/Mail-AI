@@ -104,57 +104,6 @@ export async function refund(env, row) {
     .bind(row.user_id, today()).run();
 }
 
-// --- Licence keys (same format and check as the desktop app: MAILAI-<YYYYMMDD|YYYYMM>-<sig>) ---
-
-function base32(bytes) {
-  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
-  let bits = 0, value = 0, out = "";
-  for (const b of bytes) {
-    value = (value << 8) | b;
-    bits += 8;
-    while (bits >= 5) {
-      out += alphabet[(value >>> (bits - 5)) & 31];
-      bits -= 5;
-    }
-  }
-  if (bits > 0) out += alphabet[(value << (5 - bits)) & 31];
-  return out;
-}
-
-/** Returns the key's expiry (ISO) if valid and unexpired, else null. */
-export async function checkLicenseKey(key, secret) {
-  if (!secret || typeof key !== "string") return null;
-  const parts = key.trim().toUpperCase().split("-");
-  if (parts.length !== 3 || parts[0] !== "MAILAI") return null;
-  const [, datestr, sig] = parts;
-  if (!/^\d{6}(\d{2})?$/.test(datestr)) return null;
-  const issued = Date.UTC(+datestr.slice(0, 4), +datestr.slice(4, 6) - 1, datestr.length === 8 ? +datestr.slice(6, 8) : 1);
-  const expires = issued + KEY_VALID_DAYS * DAY_MS;
-  if (!(expires > Date.now())) return null;
-  const expected = await signDate(datestr, secret);
-  // constant-time compare
-  if (sig.length !== expected.length) return null;
-  let diff = 0;
-  for (let i = 0; i < sig.length; i++) diff |= sig.charCodeAt(i) ^ expected.charCodeAt(i);
-  return diff === 0 ? new Date(expires).toISOString() : null;
-}
-
-async function signDate(datestr, secret) {
-  const hmacKey = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-  return base32(new Uint8Array(await crypto.subtle.sign("HMAC", hmacKey, new TextEncoder().encode(datestr)))).slice(0, 10);
-}
-
-/** Today's (UTC) licence key, identical to what the desktop app validates and the old Ko-fi Worker issued. */
-export async function issueLicenseKey(secret) {
-  if (!secret) throw new Error("LICENSE_SECRET not set");
-  const ymd = new Date().toISOString().slice(0, 10).replace(/-/g, "");
-  return `MAILAI-${ymd}-${await signDate(ymd, secret)}`;
-}
-
-export async function saveLicenseKey(env, userId, expiresIso) {
-  await env.DB.prepare("UPDATE users SET key_expires = ?2 WHERE user_id = ?1").bind(userId, expiresIso).run();
-}
-
 // --- Ko-fi webhook ---
 
 /** Record a Ko-fi subscription payment. Payload is Ko-fi's documented webhook JSON. */

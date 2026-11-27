@@ -192,11 +192,6 @@ td select { height: 28px; font: var(--text-small); padding: 0 var(--space-2); }
 }
 .paywall > p { color: var(--hull-muted); margin: var(--space-2) 0 0; }
 .paywall .plans { margin-top: var(--space-6); }
-.keyform { margin-top: var(--space-6); padding-top: var(--space-4); border-top: 1px solid var(--line); }
-.keyform label { display: flex; flex-direction: column; gap: var(--space-2); font: var(--text-small); color: var(--hull-muted); }
-.keyform .row { display: flex; gap: var(--space-2); }
-.keyform input { flex: 1; max-width: 360px; text-transform: uppercase; letter-spacing: 0.04em; }
-.keyform .warn { margin-top: var(--space-2); font: var(--text-small); }
 
 .plans { margin-top: var(--space-6); }
 .plans-head { display: flex; align-items: center; gap: var(--space-4); flex-wrap: wrap; margin-bottom: var(--space-4); }
@@ -230,7 +225,7 @@ td select { height: 28px; font: var(--text-small); padding: 0 var(--space-2); }
   .plan { margin-left: 0; width: 100%; }
 }
 
-/* Links styled as buttons (e.g. the Ko-fi fallback) */
+/* Links styled as buttons */
 a.button {
   display: inline-flex; align-items: center; height: 40px; padding: 0 var(--space-6);
   border-radius: var(--radius-md); border: 1px solid var(--line-strong);
