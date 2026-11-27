@@ -32,6 +32,20 @@ def country_zone(cc: str, sub: str):
     return logic._COUNTRY_ZONE.get(cc)
 
 
+MED = rules["med_subzones"]
+
+
+def refine(zone, cc: str = "", sub: str = "", name: str = ""):
+    """MED -> W.MED / C.MED / E.MED where the country (or Italian province) says which; BSEA -> E.MED."""
+    if zone == "BSEA":
+        return "E.MED"
+    if zone != "MED":
+        return zone
+    if cc == "IT":
+        return MED["italy_provinces"].get(sub, "MED")
+    return MED["countries"].get(cc) or MED["country_names"].get(name, "MED")
+
+
 def name_variants(name: str):
     """'DUMYAT (DAMIETTA)' -> DUMYAT (DAMIETTA), DUMYAT, DAMIETTA."""
     yield name
@@ -54,7 +68,7 @@ for i in range(1, 4):
             cc, name, sub = row[1].strip().upper(), row[4].strip().upper(), row[5].strip().upper()
             if not cc or not name:
                 continue
-            zone = country_zone(cc, sub)
+            zone = refine(country_zone(cc, sub), cc, sub)
             if not zone:
                 continue
             country_zones[cc].add(zone)
@@ -65,17 +79,20 @@ for i in range(1, 4):
 curated: dict[str, dict[str, str]] = defaultdict(dict)
 for cc, ports in rules["ports"].items():
     for name, zone in ports.items():
+        zone = refine(zone, cc)
         curated[name.upper()][cc] = zone
         un[name.upper()][cc] = zone
         country_zones[cc].add(zone)
 
-wpi = {k: sorted(set(v)) for k, v in logic.load_csv_into_dict(logic.resource_path("WPIUpdated.csv")).items()}
+wpi = {k: sorted({refine(z, name=k) for z in v}) for k, v in logic.load_csv_into_dict(logic.resource_path("WPIUpdated.csv")).items()}
+zone_codes = sorted((set(logic._ZONE_CODES) - {"BSEA"}) | {"W.MED", "C.MED", "E.MED"})
 
 out = {
     "_generated_by": "web/scripts/build_zones.py from zone_rules.json + WPI + UN/LOCODE. Do not edit by hand.",
-    "zones": sorted(logic._ZONE_CODES),
-    "countries": logic._COUNTRY_NAME_ZONE,
-    "aliases": logic._REGION_ALIAS,
+    "zones": zone_codes,
+    "med_subzones": ["W.MED", "C.MED", "E.MED"],
+    "countries": {k: refine(v, name=k) for k, v in logic._COUNTRY_NAME_ZONE.items()},
+    "aliases": {k: refine(v, name=k) for k, v in logic._REGION_ALIAS.items()},
     "noise": logic._PORT_NOISE.pattern,
     "curated": {k: v for k, v in sorted(curated.items())},
     "wpi": {k: (v[0] if len(v) == 1 else v) for k, v in sorted(wpi.items())},
